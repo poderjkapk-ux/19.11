@@ -93,24 +93,29 @@ async def _get_filtered_order_text(session: AsyncSession, order: Order, area: st
 
     # 2. Отримуємо інформацію про товари з БД
     names = list(items_map.keys())
-    products_res = await session.execute(select(Product).where(Product.name.in_(names)))
-    db_products = products_res.scalars().all()
+    products_res = await session.execute(select(Product))
+    all_products = products_res.scalars().all()
+    
+    # Словник для швидкого пошуку продукту за "чистою" назвою
+    db_products = {p.name.strip(): p for p in all_products}
 
     filtered_lines = []
-    for product in db_products:
-        # Перевіряємо, чи належить продукт до потрібного цеху
-        # Якщо area='kitchen', беремо все, що НЕ 'bar' (за замовчуванням kitchen)
-        # Якщо area='bar', беремо тільки 'bar'
+    for name, qty in items_map.items():
+        product = db_products.get(name)
+        
         is_target = False
-        if area == 'bar' and product.preparation_area == 'bar':
-            is_target = True
-        elif area == 'kitchen' and product.preparation_area != 'bar':
-            is_target = True
-            
+        if product:
+            if area == 'bar' and product.preparation_area == 'bar':
+                is_target = True
+            elif area == 'kitchen' and product.preparation_area != 'bar':
+                is_target = True
+        else:
+            # Fallback для товарів, яких немає в базі (наприклад, кухня)
+            if area == 'kitchen':
+                is_target = True
+
         if is_target:
-            qty = items_map.get(product.name)
-            if qty:
-                filtered_lines.append(f"- {html_module.escape(product.name)} x {qty}")
+            filtered_lines.append(f"- {html_module.escape(name)} x {qty}")
 
     if not filtered_lines:
         return ""
@@ -160,7 +165,7 @@ async def show_chef_orders(message_or_callback: Message | CallbackQuery, session
                  f"Час: {order.created_at.strftime('%H:%M')}\n"
                  f"{products_text}\n\n")
         
-        kb.row(InlineKeyboardButton(text=f"✅ Видача #{order.id}", callback_data=f"chef_ready_{order.id}"))
+        kb.row(InlineKeyboardButton(text=f"✅ Видача #{order.id}", callback_data=f"chef_ready_{order.id}_kitchen"))
     
     if count == 0:
         text += "Наразі активних замовлень немає."
@@ -218,7 +223,7 @@ async def show_bartender_orders(message_or_callback: Message | CallbackQuery, se
                  f"Час: {order.created_at.strftime('%H:%M')}\n"
                  f"{products_text}\n\n")
         
-        kb.row(InlineKeyboardButton(text=f"✅ Готово #{order.id}", callback_data=f"chef_ready_{order.id}"))
+        kb.row(InlineKeyboardButton(text=f"✅ Готово #{order.id}", callback_data=f"chef_ready_{order.id}_bar"))
     
     if count == 0:
         text += "Наразі активних замовлень немає."
@@ -516,7 +521,12 @@ def register_courier_handlers(dp_admin: Dispatcher):
     async def chef_ready_for_issuance(callback: CallbackQuery, session: AsyncSession):
         client_bot = dp_admin.get("client_bot")
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == callback.from_user.id).options(joinedload(Employee.role)))
-        order_id = int(callback.data.split("_")[-1])
+        
+        # Розбираємо нові дані callback, які можуть містити area
+        parts = callback.data.split("_")
+        order_id = int(parts[2])
+        # Якщо area передано (для нових кнопок), беремо його, інакше дефолт
+        area = parts[3] if len(parts) > 3 else 'kitchen'
         
         order = await session.get(Order, order_id, options=[joinedload(Order.status), joinedload(Order.table), joinedload(Order.accepted_by_waiter)])
         if not order: return await callback.answer("Замовлення не знайдено.")
@@ -527,27 +537,30 @@ def register_courier_handlers(dp_admin: Dispatcher):
         old_status_name = order.status.name
         actor_info = f"{employee.role.name if employee else 'Кухня/Бар'}: {employee.full_name if employee else 'Невідомий'}"
         
-        # Логіка: якщо замовлення ВЖЕ готове (наприклад, кухня віддала, а тепер бар), ми просто сповіщаємо офіціанта
-        # що є "Додаткова видача", не змінюючи статус (бо він вже "Готовий")
+        # Уточнюємо, хто саме натиснув кнопку, для логів
+        if area == 'bar': actor_info += " (Бар)"
+        else: actor_info += " (Кухня)"
         
         if order.status_id != ready_status.id:
-            # Змінюємо статус на Готовий, якщо він ще не такий
             order.status_id = ready_status.id
             session.add(OrderStatusHistory(order_id=order.id, status_id=ready_status.id, actor_info=actor_info))
             await session.commit()
         
-        # У будь-якому випадку викликаємо сповіщення, щоб офіціант знав, що ЦЯ частина готова
         await notify_all_parties_on_status_change(
             order=order, 
-            old_status_name=old_status_name, # Може співпадати з новим, це ок
+            old_status_name=old_status_name,
             actor_info=actor_info,
             admin_bot=callback.bot,
             client_bot=client_bot,
             session=session
         )
 
-        products_formatted = html_module.escape(order.products or '').replace(", ", "\n")
-        # Оновлюємо повідомлення для повара/бармена, що він виконав роботу
+        # Отримуємо список товарів САМЕ ЦЬОГО ЦЕХУ для оновлення повідомлення
+        products_formatted = await _get_filtered_order_text(session, order, area)
+        # Fallback, якщо раптом щось пішло не так
+        if not products_formatted:
+             products_formatted = html_module.escape(order.products or '').replace(", ", "\n")
+
         done_text = f"✅ <b>ВИДАНО ({actor_info}): Замовлення #{order.id}</b>\nСклад:\n{products_formatted}"
         
         try: await callback.message.edit_text(done_text, reply_markup=None)

@@ -53,7 +53,7 @@ class Role(Base):
     can_serve_tables: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Може обслуговувати столики (офіціант)")
     # --- ДЛЯ КУХНІ ---
     can_receive_kitchen_orders: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Отримує замовлення для приготування (Повар)")
-    # --- НОВЕ ПОЛЕ: ДЛЯ БАРУ ---
+    # --- ДЛЯ БАРУ ---
     can_receive_bar_orders: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"), comment="Отримує замовлення для бару (Бармен)")
     
     employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="role")
@@ -105,7 +105,6 @@ class Product(Base):
     category: Mapped["Category"] = relationship("Category", back_populates="products")
     cart_items: Mapped[list["CartItem"]] = relationship("CartItem", back_populates="product")
     
-    # --- НОВЕ ПОЛЕ: Цех приготування ---
     # 'kitchen' - Кухня, 'bar' - Бар
     preparation_area: Mapped[str] = mapped_column(sa.String(20), default='kitchen', server_default=text("'kitchen'"), nullable=False)
 
@@ -121,7 +120,7 @@ class OrderStatus(Base):
     visible_to_waiter: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"), nullable=False)
     
     visible_to_chef: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"), nullable=False)
-    # --- НОВЕ ПОЛЕ: Видимий для бармена ---
+    # Видимий для бармена
     visible_to_bartender: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"), nullable=False)
     
     # Вимагає сповіщення виробництва (кухні/бару)
@@ -234,10 +233,23 @@ class Settings(Base):
     primary_color: Mapped[Optional[str]] = mapped_column(sa.String(7), default="#5a5a5a")
     secondary_color: Mapped[Optional[str]] = mapped_column(sa.String(7), default="#eeeeee")
     background_color: Mapped[Optional[str]] = mapped_column(sa.String(7), default="#f4f4f4")
+    
+    # --- Додаткові налаштування кольорів ---
+    text_color: Mapped[Optional[str]] = mapped_column(sa.String(7), default="#333333")
+    footer_bg_color: Mapped[Optional[str]] = mapped_column(sa.String(7), default="#333333")
+    footer_text_color: Mapped[Optional[str]] = mapped_column(sa.String(7), default="#ffffff")
+
     font_family_sans: Mapped[Optional[str]] = mapped_column(sa.String(100), default="Golos Text")
     font_family_serif: Mapped[Optional[str]] = mapped_column(sa.String(100), default="Playfair Display")
 
     telegram_welcome_message: Mapped[Optional[str]] = mapped_column(sa.Text)
+    
+    # --- Налаштування підвалу (Footer) ---
+    footer_address: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
+    footer_phone: Mapped[Optional[str]] = mapped_column(sa.String(50), nullable=True)
+    working_hours: Mapped[Optional[str]] = mapped_column(sa.String(100), nullable=True)
+    instagram_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
+    facebook_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
 
 
 async def create_db_tables():
@@ -265,7 +277,6 @@ async def create_db_tables():
             session.add(Role(name="Кур'єр", can_manage_orders=False, can_be_assigned=True, can_serve_tables=False, can_receive_kitchen_orders=False, can_receive_bar_orders=False))
             session.add(Role(name="Офіціант", can_manage_orders=False, can_be_assigned=False, can_serve_tables=True, can_receive_kitchen_orders=False, can_receive_bar_orders=False))
             session.add(Role(name="Повар", can_manage_orders=False, can_be_assigned=False, can_serve_tables=False, can_receive_kitchen_orders=True, can_receive_bar_orders=False))
-            # --- ДОДАЄМО БАРМЕНА ---
             session.add(Role(name="Бармен", can_manage_orders=False, can_be_assigned=False, can_serve_tables=False, can_receive_kitchen_orders=False, can_receive_bar_orders=True))
 
         await session.commit()

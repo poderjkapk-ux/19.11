@@ -21,8 +21,8 @@ ADMIN_HTML_TEMPLATE = """
     
     <style>
         :root {{
-            --primary-color: #4a4a4a; /* ЗМІНЕНО: Нейтральний сірий */
-            --primary-hover-color: #333333; /* ЗМІНЕНО: Темніший сірий */
+            --primary-color: #4a4a4a;
+            --primary-hover-color: #333333;
             --text-color-light: #111827;
             --text-color-dark: #f9fafb;
             --bg-light: #f9fafb;
@@ -393,7 +393,6 @@ ADMIN_TABLES_BODY = """
     </div>
 </div>
 <script>
-// ОНОВЛЕНО: Функція тепер приймає 'assignedWaiterIds'
 function openAssignWaiterModal(tableId, tableName, waiters, assignedWaiterIds) {{
     const modal = document.getElementById('assign-waiter-modal');
     const form = document.getElementById('assign-waiter-form');
@@ -655,11 +654,9 @@ document.addEventListener('DOMContentLoaded', () => {
         productSearchInput.value = '';
     };
 
-    // ВИПРАВЛЕНО: Функція ініціалізації тепер приймає дані як аргумент
     window.initializeForm = (data) => {
         if (!data) {
             console.error("Initial order data is not provided!");
-            // Установка значень за замовчуванням для нової форми
             orderForm.action = '/api/admin/order/new';
             orderForm.querySelector('button[type="submit"]').textContent = 'Створити замовлення';
             orderItems = {};
@@ -764,9 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Initial Call for new order page (if no data is injected)
     if (typeof window.initializeForm === 'function' && !window.initializeForm.invoked) {
-        // Перевіряємо, чи була вже викликана функція, щоб уникнути подвійної ініціалілізації
         const newOrderData = {
              items: {},
              action: '/api/admin/order/new',
@@ -794,6 +789,7 @@ WEB_ORDER_HTML = """
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
     <link rel="manifest" href="/static/favicons/site.webmanifest">
     <link rel="shortcut icon" href="/static/favicons/favicon.ico">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family={font_family_serif_encoded}:wght@400;700&family={font_family_sans_encoded}:wght@400;600&display=swap" rel="stylesheet">
@@ -803,11 +799,14 @@ WEB_ORDER_HTML = """
         --primary-color: {primary_color_val};
         --secondary-color: {secondary_color_val};
         --background-color: {background_color_val};
-        /* Автоматично генеруємо колір при наведенні (на 10% темніший) */
+        --text-color: {text_color_val}; /* NEW */
+        --footer-bg-color: {footer_bg_color_val}; /* NEW */
+        --footer-text-color: {footer_text_color_val}; /* NEW */
+        
         --primary-hover-color: color-mix(in srgb, {primary_color_val}, black 10%);
-        --primary-glow-color: {primary_color_val}26; /* 15% opacity */
+        --primary-glow-color: {primary_color_val}26; 
       }}
-      /* Застосовуємо динамічні шрифти */
+      
       body, .category-nav a, .add-to-cart-btn, .action-btn, #checkout-form, .radio-group label {{
         font-family: '{font_family_sans_val}', sans-serif;
       }}
@@ -817,13 +816,8 @@ WEB_ORDER_HTML = """
     </style>
     <style>
         :root {{
-            /* ЗМІНЕНО: Нейтральна світла тема */
             --bg-color: var(--background-color, #f4f4f4);
             --card-bg: #ffffff;
-            --text-color: #333333;
-            /* --primary-color: #5a5a5a; This will be overridden */
-            /* --primary-hover-color: #404040; This will be overridden */
-            /* --primary-glow-color: rgba(0, 0, 0, 0.1); This will be overridden */
             --border-color: var(--secondary-color, #dddddd);
             --success-color: #28a745;
             --dark-text-for-accent: #ffffff;
@@ -833,20 +827,18 @@ WEB_ORDER_HTML = """
         @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
         @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-        @keyframes shimmer {{
-            0% {{ background-position: -500px 0; }}
-            100% {{ background-position: 500px 0; }}
-        }}
 
         html {{
             scroll-behavior: smooth;
             overflow-y: scroll;
         }}
         body {{
-            /* font-family: 'Golos Text', sans-serif; (Moved to dynamic style) */
             margin: 0;
             background-color: var(--bg-color);
-            color: var(--text-color);
+            color: var(--text-color); /* Updated */
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         }}
         .container {{ 
             width: 100%; 
@@ -864,20 +856,10 @@ WEB_ORDER_HTML = """
             color: var(--text-color);
         }}
         header h1 {{
-            /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */
             font-size: clamp(3em, 6vw, 4em);
             color: var(--text-color);
             margin: 0;
             font-weight: 700;
-            text-shadow: none; /* ЗМІНЕНО */
-        }}
-        header p {{
-            /* font-family: 'Golos Text', sans-serif; (Moved to dynamic style) */
-            font-size: clamp(1em, 2vw, 1.2em);
-            color: #888; /* ЗМІНЕНО */
-            margin-top: 10px;
-            letter-spacing: 4px;
-            text-transform: uppercase;
         }}
 
         .main-nav {{
@@ -914,7 +896,7 @@ WEB_ORDER_HTML = """
             display: flex; 
             position: sticky; 
             top: -1px;
-            background-color: rgba(255, 255, 255, 0.9); /* ЗМІНЕНО */
+            background-color: rgba(255, 255, 255, 0.9); 
             backdrop-filter: blur(12px);
             z-index: 100; 
             animation: fadeIn 0.5s ease-out; 
@@ -922,9 +904,9 @@ WEB_ORDER_HTML = """
             white-space: nowrap;
             -webkit-overflow-scrolling: touch; 
             scrollbar-width: none;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1); /* ЗМІНЕНО */
-            border-top: 1px solid var(--border-color); /* ЗМІНЕНО */
-            border-bottom: 1px solid var(--border-color); /* ЗМІНЕНО */
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
+            border-top: 1px solid var(--border-color); 
+            border-bottom: 1px solid var(--border-color); 
             width: 100%;
             padding: 15px 0;
         }}
@@ -955,10 +937,10 @@ WEB_ORDER_HTML = """
             grid-template-columns: 1fr; 
             gap: 40px; 
             padding: 0 var(--side-padding); 
+            margin-bottom: 40px;
         }}
         .category-section {{ margin-bottom: 30px; padding-top: 90px; margin-top: -90px; }}
         .category-title {{
-            /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */
             font-size: clamp(2.2em, 4vw, 2.8em); color: var(--primary-color);
             padding-bottom: 15px; margin-bottom: 40px; text-align: center;
             border-bottom: 1px solid var(--border-color);
@@ -982,22 +964,22 @@ WEB_ORDER_HTML = """
             overflow: hidden; display: flex; flex-direction: column;
             transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
             animation: fadeIn 0.5s ease-out forwards; opacity: 0; position: relative;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05); /* ЗМІНЕНО */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
         }}
         .product-card:hover {{
             transform: translateY(-10px);
-            box-shadow: 0 15px 30px rgba(0,0,0,0.1), 0 0 20px var(--primary-glow-color); /* ЗМІНЕНО */
+            box-shadow: 0 15px 30px rgba(0,0,0,0.1), 0 0 20px var(--primary-glow-color); 
             border-color: var(--primary-color);
         }}
         .product-image-wrapper {{ width: 100%; height: 220px; position: relative; overflow: hidden; }}
-        .product-image-wrapper::after {{ content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 50%; background: linear-gradient(to top, rgba(0,0,0,0.5), transparent); }} /* ЗМІНЕНО */
+        .product-image-wrapper::after {{ content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 50%; background: linear-gradient(to top, rgba(0,0,0,0.5), transparent); }}
         .product-image {{ width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }}
         .product-card:hover .product-image {{ transform: scale(1.1); }}
         .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
-        .product-name {{ /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */ font-size: 1.7em; font-weight: 700; margin: 0 0 10px; }}
-        .product-desc {{ font-size: 0.9em; font-weight: 400; color: #777; margin: 0 0 20px; flex-grow: 1; line-height: 1.6; }} /* ЗМІНЕНО */
+        .product-name {{ font-size: 1.7em; font-weight: 700; margin: 0 0 10px; color: #333; }}
+        .product-desc {{ font-size: 0.9em; font-weight: 400; color: #777; margin: 0 0 20px; flex-grow: 1; line-height: 1.6; }} 
         .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
-        .product-price {{ /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */ font-size: 1.8em; font-weight: 700; color: var(--primary-color); }}
+        .product-price {{ font-size: 1.8em; font-weight: 700; color: var(--primary-color); }}
         .add-to-cart-btn {{
             background: var(--primary-color);
             color: var(--dark-text-for-accent);
@@ -1020,16 +1002,16 @@ WEB_ORDER_HTML = """
 
         #cart-sidebar {{
             position: fixed; top: 0; right: -100%; width: 400px; height: 100%;
-            background-color: rgba(255, 255, 255, 0.85); /* ЗМІНЕНО */
+            background-color: rgba(255, 255, 255, 0.85); 
             backdrop-filter: blur(15px);
-            border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.1); /* ЗМІНЕНО */
+            border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.1); 
             transition: right 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000;
-            color: var(--text-color); /* ЗМІНЕНО */
+            color: #333; 
         }}
         #cart-sidebar.open {{ right: 0; }}
         .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
-        .cart-header h2 {{ margin: 0; color: var(--primary-color); /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */}}
-        #close-cart-btn {{ background: none; border: none; color: var(--text-color); font-size: 2.5em; cursor: pointer; line-height: 1; padding: 0; transition: transform 0.2s ease, color 0.2s ease; }} /* ЗМІНЕНО */
+        .cart-header h2 {{ margin: 0; color: var(--primary-color); }}
+        #close-cart-btn {{ background: none; border: none; color: #333; font-size: 2.5em; cursor: pointer; line-height: 1; padding: 0; transition: transform 0.2s ease, color 0.2s ease; }} 
         #close-cart-btn:hover {{ color: var(--primary-color); transform: rotate(90deg); }}
         .cart-items {{ flex-grow: 1; overflow-y: auto; padding: 20px; }}
         .cart-empty-msg {{ color: #888; text-align: center; margin-top: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }}
@@ -1039,126 +1021,171 @@ WEB_ORDER_HTML = """
         .cart-item {{ animation: popIn 0.3s ease-out; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }}
         .cart-item-info {{ flex-grow: 1; margin-right: 10px; }}
         .cart-item-name {{ font-weight: 600; }}
-        .cart-item-price {{ color: #555; font-size: 0.9em; }} /* ЗМІНЕНО */
+        .cart-item-price {{ color: #555; font-size: 0.9em; }} 
         .cart-item-controls {{ display: flex; align-items: center; }}
-        .cart-item-controls button {{ background: #eee; border: 1px solid var(--border-color); color: var(--text-color); width: 28px; height: 28px; cursor: pointer; border-radius: 50%; font-size: 1.1em; transition: background-color 0.2s ease, transform 0.2s ease; }} /* ЗМІНЕНО */
-        .cart-item-controls button:hover {{ background-color: #ddd; transform: scale(1.1); }} /* ЗМІНЕНО */
+        .cart-item-controls button {{ background: #eee; border: 1px solid var(--border-color); color: #333; width: 28px; height: 28px; cursor: pointer; border-radius: 50%; font-size: 1.1em; transition: background-color 0.2s ease, transform 0.2s ease; }} 
+        .cart-item-controls button:hover {{ background-color: #ddd; transform: scale(1.1); }} 
         .cart-item-controls span {{ margin: 0 10px; font-weight: 500; }}
         .cart-item-remove-btn {{ background: none; border: none; color: #999; font-size: 1.5em; line-height: 1; cursor: pointer; margin-left: 10px; transition: color 0.2s ease, transform 0.2s ease; }}
         .cart-item-remove-btn:hover {{ color: #ff6b6b; transform: scale(1.2); }}
-        .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); background-color: rgba(255, 255, 255, 0.8); }} /* ЗМІНЕНО */
+        .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); background-color: rgba(255, 255, 255, 0.8); }} 
         .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
         #checkout-btn {{ width: 100%; padding: 15px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; transition: all 0.3s ease; }}
         #checkout-btn:hover:not(:disabled) {{ background-color: var(--primary-hover-color); box-shadow: 0 0 15px var(--primary-glow-color); }}
-        #checkout-btn:disabled {{ background-color: #aaa; cursor: not-allowed; color: #eee; }} /* ЗМІНЕНО */
+        #checkout-btn:disabled {{ background-color: #aaa; cursor: not-allowed; color: #eee; }} 
         #cart-toggle {{
             position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color); color: var(--dark-text-for-accent);
             border: none; border-radius: 50%; width: 60px; height: 60px; cursor: pointer; z-index: 1001;
-            display: flex; justify-content: center; align-items: center; transition: transform 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.2); /* ЗМІНЕНО */
+            display: flex; justify-content: center; align-items: center; transition: transform 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
         }}
         #cart-toggle.popping {{ animation: cartPop 0.4s ease; }}
         #cart-toggle svg {{ width: 28px; height: 28px; }}
-        #cart-toggle:hover {{ transform: scale(1.1); background-color: var(--primary-hover-color); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }} /* ЗМІНЕНО */
+        #cart-toggle:hover {{ transform: scale(1.1); background-color: var(--primary-hover-color); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }} 
         #cart-count {{ position: absolute; top: -5px; right: -5px; background: var(--primary-color); color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px; font-size: 0.8em; display: flex; justify-content: center; align-items: center; font-weight: 700; border: 2px solid var(--card-bg);}}
         #checkout-modal {{ display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); justify-content: center; align-items: center; opacity: 0; transition: opacity 0.3s ease; }}
         #checkout-modal.visible {{ opacity: 1; }}
         .modal-content {{ background-color: var(--card-bg); backdrop-filter: blur(15px); padding: 30px; border-radius: 8px; width: 90%; max-width: 500px; border: 1px solid var(--border-color); transform: scale(0.95); transition: transform 0.3s ease; }}
         #checkout-modal.visible .modal-content {{ transform: scale(1); }}
-        .modal-content h2 {{ color: var(--primary-color); /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */ margin-top: 0; text-align: center; }}
+        .modal-content h2 {{ color: var(--primary-color); margin-top: 0; text-align: center; }}
         .modal-content .form-group {{ margin-bottom: 15px; }}
-        .modal-content .form-group label {{ display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.9em; color: #555; }} /* ЗМІНЕНО */
-        .modal-content input[type="text"], .modal-content input[type="tel"] {{ width: 100%; padding: 12px; background: var(--secondary-color, #eee); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 5px; box-sizing: border-box; transition: border-color 0.3s ease, box-shadow 0.3s ease; }} /* ЗМІНЕНО */
+        .modal-content .form-group label {{ display: block; margin-bottom: 8px; font-weight: 500; font-size: 0.9em; color: #555; }} 
+        .modal-content input[type="text"], .modal-content input[type="tel"] {{ width: 100%; padding: 12px; background: var(--secondary-color, #eee); border: 1px solid var(--border-color); color: #333; border-radius: 5px; box-sizing: border-box; transition: border-color 0.3s ease, box-shadow 0.3s ease; }} 
         .modal-content input[type="text"]:focus, .modal-content input[type="tel"]:focus {{ border-color: var(--primary-color); box-shadow: 0 0 10px var(--primary-glow-color); outline: none; }}
         .modal-content input:invalid {{ border-color: #e53935; }}
         .radio-group {{ display: flex; gap: 15px; }}
         .radio-group input[type="radio"] {{ display: none; }}
         .radio-group label {{ flex: 1; text-align: center; padding: 10px; border: 1px solid var(--border-color); border-radius: 5px; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 8px; }}
         .radio-group label svg {{ width: 18px; height: 18px; opacity: 0.7; transition: opacity 0.3s ease; }}
-        .radio-group input[type="radio"]:checked + label {{ background-color: var(--primary-color); border-color: var(--primary-color); color: var(--dark-text-for-accent); font-weight: 700; box-shadow: 0 0 10px rgba(0,0,0,0.1); }} /* ЗМІНЕНО */
+        .radio-group input[type="radio"]:checked + label {{ background-color: var(--primary-color); border-color: var(--primary-color); color: var(--dark-text-for-accent); font-weight: 700; box-shadow: 0 0 10px rgba(0,0,0,0.1); }} 
         .radio-group input[type="radio"]:checked + label svg {{ opacity: 1; }}
         #place-order-btn {{ width: 100%; padding: 15px; margin-top: 10px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border:none; border-radius: 5px; font-weight: 700; font-size: 1.1em; cursor: pointer; transition: all 0.3s ease;}}
         #place-order-btn:hover {{ background-color: var(--primary-hover-color); box-shadow: 0 0 15px var(--primary-glow-color); }}
         .close-modal {{ float: right; font-size: 1.8em; cursor: pointer; color: #888; transition: color 0.2s ease, transform 0.2s ease; }}
-        .close-modal:hover {{ color: var(--text-color); transform: rotate(90deg); }} /* ЗМІНЕНО */
+        .close-modal:hover {{ color: #333; transform: rotate(90deg); }} 
         #scroll-to-top {{ display: none; opacity: 0; position: fixed; bottom: 90px; right: 20px; width: 50px; height: 50px; border-radius: 50%; background: var(--primary-color); color: var(--dark-text-for-accent); border: none; cursor: pointer; z-index: 999; font-size: 1.5em; transition: opacity 0.3s ease, transform 0.3s ease, background-color 0.3s ease; }}
         #scroll-to-top.visible {{ display: block; opacity: 1; }}
         #scroll-to-top:hover {{ transform: scale(1.1); background-color: var(--primary-hover-color); box-shadow: 0 0 15px var(--primary-glow-color); }}
         #loader {{ display: flex; justify-content: center; align-items: center; height: 80vh; }}
         .spinner {{ border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }}
-        footer {{ text-align: center; padding: 40px var(--side-padding) 20px; margin-top: auto; color: #888; font-size: 0.9em; }}
+        
+        /* --- NEW Footer Styles --- */
+        footer {{
+            background-color: var(--footer-bg-color);
+            color: var(--footer-text-color);
+            padding: 50px var(--side-padding) 30px;
+            margin-top: auto;
+            border-top: 1px solid var(--border-color);
+        }}
+        .footer-content {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+        .footer-section h4 {{
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            font-weight: 700;
+            position: relative;
+            padding-bottom: 10px;
+            color: var(--footer-text-color);
+        }}
+        .footer-section h4::after {{
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 50px;
+            height: 2px;
+            background-color: var(--primary-color);
+        }}
+        .footer-contact-item {{
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }}
+        .footer-contact-item i {{
+            margin-right: 12px;
+            color: var(--primary-color);
+            margin-top: 4px;
+            font-size: 1.1em;
+        }}
+        .footer-contact-item a {{
+            color: var(--footer-text-color);
+            text-decoration: none;
+            transition: color 0.2s;
+        }}
+        .footer-contact-item a:hover {{
+            color: var(--primary-color);
+        }}
+        .footer-social {{
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }}
+        .footer-social a {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            color: var(--footer-text-color);
+            font-size: 1.2em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }}
+        .footer-social a:hover {{
+            background-color: var(--primary-color);
+            color: var(--dark-text-for-accent);
+            transform: translateY(-3px);
+        }}
+        .footer-bottom {{
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.85em;
+            opacity: 0.8;
+        }}
         
         /* Styles for the Page Modal */
         .page-modal-overlay {{
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-            z-index: 2000;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            opacity: 0;
-            transition: opacity 0.3s ease-in-out;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.8); backdrop-filter: blur(10px);
+            z-index: 2000; display: none; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.3s ease-in-out;
         }}
-        .page-modal-overlay.visible {{
-            display: flex;
-            opacity: 1;
-        }}
+        .page-modal-overlay.visible {{ display: flex; opacity: 1; }}
         .page-modal-content {{
-            background-color: var(--card-bg);
-            padding: 2rem 3rem;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            width: 90%;
-            max-width: 800px;
-            max-height: 85vh;
-            overflow-y: auto;
-            position: relative;
-            transform: scale(0.95);
-            transition: transform 0.3s ease-in-out;
+            background-color: var(--card-bg); padding: 2rem 3rem; border-radius: 8px;
+            border: 1px solid var(--border-color); width: 90%; max-width: 800px; max-height: 85vh;
+            overflow-y: auto; position: relative; transform: scale(0.95); transition: transform 0.3s ease-in-out;
+            color: #333;
         }}
-        .page-modal-overlay.visible .page-modal-content {{
-            transform: scale(1);
-        }}
+        .page-modal-overlay.visible .page-modal-content {{ transform: scale(1); }}
         .close-page-modal-btn {{
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            background: none;
-            border: none;
-            color: var(--text-color); /* ЗМІНЕНО */
-            font-size: 2.5em;
-            cursor: pointer;
-            line-height: 1;
+            position: absolute; top: 15px; right: 20px; background: none; border: none;
+            color: #333; font-size: 2.5em; cursor: pointer; line-height: 1;
             transition: transform 0.2s ease, color 0.2s ease;
         }}
-        .close-page-modal-btn:hover {{
-            color: var(--primary-color);
-            transform: rotate(90deg);
-        }}
+        .close-page-modal-btn:hover {{ color: var(--primary-color); transform: rotate(90deg); }}
         #page-modal-title {{
-            /* font-family: 'Playfair Display', serif; (Moved to dynamic style) */
-            color: var(--primary-color);
-            margin-top: 0;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border-color);
-            line-height: 1.3;
+            color: var(--primary-color); margin-top: 0; margin-bottom: 1.5rem;
+            padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); line-height: 1.3;
         }}
-        #page-modal-body {{
-            line-height: 1.8;
-        }}
-        #page-modal-body a {{
-            color: var(--primary-color);
-        }}
-        #page-modal-body .spinner {{
-             margin: 40px auto;
-        }}
+        #page-modal-body {{ line-height: 1.8; }}
+        #page-modal-body a {{ color: var(--primary-color); }}
+        #page-modal-body .spinner {{ margin: 40px auto; }}
 
         @media (max-width: 768px) {{
             #cart-sidebar {{ width: 95%; }}
             .page-modal-content {{ padding: 2rem 1.5rem; }}
+            .footer-content {{ grid-template-columns: 1fr; gap: 30px; }}
         }}
     </style>
 </head>
@@ -1239,7 +1266,36 @@ WEB_ORDER_HTML = """
         </div>
     </div>
 
-    <footer><p>&copy; 2024 Всі права захищені.</p></footer> <script>
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Контакти</h4>
+                <div class="footer-contact-item">
+                    <i class="fa-solid fa-location-dot"></i>
+                    <span>{footer_address}</span>
+                </div>
+                <div class="footer-contact-item">
+                    <i class="fa-solid fa-phone"></i>
+                    <a href="tel:{footer_phone}">{footer_phone}</a>
+                </div>
+                 <div class="footer-contact-item">
+                    <i class="fa-solid fa-clock"></i>
+                    <span>{working_hours}</span>
+                </div>
+            </div>
+            <div class="footer-section">
+                <h4>Ми в соцмережах</h4>
+                <div class="footer-social">
+                    {social_links_html}
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 {site_title}. Всі права захищені.</p>
+        </div>
+    </footer>
+
+    <script>
         document.addEventListener('DOMContentLoaded', () => {{
             let cart = {{}};
             const savedCart = localStorage.getItem('webCart');
@@ -1275,13 +1331,11 @@ WEB_ORDER_HTML = """
             const specificTimeGroup = document.getElementById('specific-time-group');
             const phoneInput = document.getElementById('phone_number');
 
-            // --- NEW: Page Modal References ---
             const pageModal = document.getElementById('page-modal');
             const closePageModalBtn = document.getElementById('close-page-modal-btn');
             const pageModalTitle = document.getElementById('page-modal-title');
             const pageModalBody = document.getElementById('page-modal-body');
             
-            // --- Body Scroll Lock (чтобы избежать "сжатия") ---
             const lockBodyScroll = () => {{
                 document.body.style.overflow = 'hidden';
             }};
@@ -1381,7 +1435,6 @@ WEB_ORDER_HTML = """
                 }});
             }};
             
-            // --- Scrollspy for Category Nav ---
             const setupScrollspy = () => {{
                 const navContainer = document.getElementById('category-nav');
                 const navLinks = navContainer.querySelectorAll('a');
@@ -1424,7 +1477,6 @@ WEB_ORDER_HTML = """
                 }});
             }};
             
-            // --- Cart Logic ---
             const updateCartView = () => {{
                 cartItemsContainer.innerHTML = '';
                 let totalPrice = 0;
@@ -1568,12 +1620,11 @@ WEB_ORDER_HTML = """
                 }}
             }});
             
-            // --- NEW: Page Modal Logic ---
             const openPageModal = async (itemId) => {{
                 lockBodyScroll();
                 pageModal.classList.add('visible');
                 pageModalTitle.textContent = '';
-                pageModalBody.innerHTML = '<div class="spinner"></div>'; // Show loader
+                pageModalBody.innerHTML = '<div class="spinner"></div>'; 
 
                 try {{
                     const response = await fetch(`/api/page/${{itemId}}`);
@@ -1610,7 +1661,6 @@ WEB_ORDER_HTML = """
                 }}
             }});
 
-            // --- Scroll to Top Logic ---
             window.addEventListener('scroll', () => {{
                 scrollToTopBtn.classList.toggle('visible', window.scrollY > 300);
             }});
@@ -1619,7 +1669,6 @@ WEB_ORDER_HTML = """
                 window.scrollTo({{ top: 0, behavior: 'smooth' }});
             }});
 
-            // --- Initial Calls ---
             fetchMenu();
             updateCartView();
         }});
@@ -1708,8 +1757,6 @@ ADMIN_REPORTS_BODY = """
 </div>
 """
 
-# --- Шаблон ADMIN_SETTINGS_BODY оновлено ---
-# Видалено поля client_bot_token, admin_bot_token, admin_chat_id та налаштування R-Keeper
 ADMIN_SETTINGS_BODY = """
 <div class="card">
     <form action="/admin/settings" method="post" enctype="multipart/form-data">
@@ -1744,10 +1791,8 @@ ADMIN_SETTINGS_BODY = """
     </form>
 </div>
 """
-# --- КІНЕЦЬ ОНОВЛЕННЯ ADMIN_SETTINGS_BODY ---
 
 
-# Template for the Menu Item management page in the admin panel
 ADMIN_MENU_BODY = """
 <div class="card">
     <h2>{form_title}</h2>
@@ -1898,8 +1943,6 @@ ADMIN_ORDER_MANAGE_BODY = """
 """
 
 
-# ШАБЛОНИ ДЛЯ РОЗДІЛУ "КЛІЄНТИ"
-
 ADMIN_CLIENTS_LIST_BODY = """
 <div class="card">
     <h2><i class="fa-solid fa-users-line"></i> Список клієнтів</h2>
@@ -2045,8 +2088,6 @@ ADMIN_CLIENT_DETAIL_BODY = """
 </script>
 """
 
-# ОНОВЛЕНИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
-# Тепер містить історію замовлень та загальний рахунок
 IN_HOUSE_MENU_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -2062,6 +2103,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
     <link rel="manifest" href="/static/favicons/site.webmanifest">
     <link rel="shortcut icon" href="/static/favicons/favicon.ico">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family={font_family_serif_encoded}:wght@400;700&family={font_family_sans_encoded}:wght@400;600&display=swap" rel="stylesheet">
@@ -2071,10 +2113,14 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         --primary-color: {primary_color_val};
         --secondary-color: {secondary_color_val};
         --background-color: {background_color_val};
+        --text-color: {text_color_val}; /* NEW */
+        --footer-bg-color: {footer_bg_color_val}; /* NEW */
+        --footer-text-color: {footer_text_color_val}; /* NEW */
+        
         --primary-hover-color: color-mix(in srgb, {primary_color_val}, black 10%);
-        --primary-glow-color: {primary_color_val}26; /* 15% opacity */
+        --primary-glow-color: {primary_color_val}26;
       }}
-      /* Застосовуємо динамічні шрифти */
+      
       body, .category-nav a, .add-to-cart-btn, .action-btn, #checkout-form, .radio-group label {{
         font-family: '{font_family_sans_val}', sans-serif;
       }}
@@ -2086,7 +2132,6 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         :root {{
             --bg-color: var(--background-color, #f4f4f4);
             --card-bg: #ffffff;
-            --text-color: #333333;
             --border-color: var(--secondary-color, #dddddd);
             --dark-text-for-accent: #ffffff;
             --side-padding: 20px;
@@ -2099,7 +2144,10 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         body {{
             margin: 0;
             background-color: var(--bg-color);
-            color: var(--text-color);
+            color: var(--text-color); /* Updated */
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
         }}
         .container {{ width: 100%; margin: 0 auto; padding: 0; }}
         header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
@@ -2142,7 +2190,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             box-shadow: 0 0 15px var(--primary-glow-color);
         }}
         
-        #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); }}
+        #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); margin-bottom: 40px; }}
         .category-section {{ margin-bottom: 30px; padding-top: 90px; margin-top: -90px; }}
         .category-title {{
             font-size: clamp(2.2em, 4vw, 2.8em);
@@ -2171,7 +2219,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         .product-image {{ width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }}
         .product-card:hover .product-image {{ transform: scale(1.1); }}
         .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
-        .product-name {{ font-size: 1.7em; margin: 0 0 10px; }}
+        .product-name {{ font-size: 1.7em; margin: 0 0 10px; color: #333; }}
         .product-desc {{ font-size: 0.9em; color: #777; margin: 0 0 20px; flex-grow: 1; line-height: 1.6; }}
         .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
         .product-price {{ font-size: 1.8em; color: var(--primary-color); }}
@@ -2191,7 +2239,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             background-color: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px);
             border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.1);
             transition: all 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000;
-            color: var(--text-color);
+            color: #333;
         }}
         #history-sidebar {{ left: -100%; right: auto; border-left: none; border-right: 1px solid var(--border-color); box-shadow: 5px 0 25px rgba(0,0,0,0.1); }}
 
@@ -2200,7 +2248,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
 
         .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
         .cart-header h2 {{ margin: 0; color: var(--primary-color); }}
-        #close-cart-btn, #close-history-btn {{ background: none; border: none; color: var(--text-color); font-size: 2.5em; cursor: pointer; line-height: 1; transition: transform 0.2s ease, color 0.2s ease;}}
+        #close-cart-btn, #close-history-btn {{ background: none; border: none; color: #333; font-size: 2.5em; cursor: pointer; line-height: 1; transition: transform 0.2s ease, color 0.2s ease;}}
         #close-cart-btn:hover, #close-history-btn:hover {{ color: var(--primary-color); transform: rotate(90deg); }}
         
         .cart-items {{ flex-grow: 1; overflow-y: auto; padding: 20px; }}
@@ -2208,7 +2256,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         .cart-item-info {{ flex-grow: 1; }} .cart-item-name {{ font-weight: 600; }}
         .cart-item-price {{ color: #555; font-size: 0.9em; }}
         .cart-item-controls {{ display: flex; align-items: center; }}
-        .cart-item-controls button {{ background: var(--secondary-color, #eee); border: 1px solid var(--border-color); color: var(--text-color); width: 28px; height: 28px; cursor: pointer; border-radius: 50%; }}
+        .cart-item-controls button {{ background: var(--secondary-color, #eee); border: 1px solid var(--border-color); color: #333; width: 28px; height: 28px; cursor: pointer; border-radius: 50%; }}
         .cart-item-controls span {{ margin: 0 10px; }}
         .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); background-color: rgba(255, 255, 255, 0.8); }}
         .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
@@ -2286,9 +2334,93 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         }}
         button.working .btn-spinner {{ display: inline-block; }}
         button.working span {{ vertical-align: middle; }}
-        footer {{ text-align: center; padding: 40px var(--side-padding) 20px; margin-top: auto; color: #888; font-size: 0.9em; }}
         #loader {{ display: flex; justify-content: center; align-items: center; height: 80vh; }}
         .spinner {{ border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }}
+        
+        /* --- NEW Footer Styles --- */
+        footer {{
+            background-color: var(--footer-bg-color);
+            color: var(--footer-text-color);
+            padding: 50px var(--side-padding) 30px;
+            margin-top: auto;
+            border-top: 1px solid var(--border-color);
+        }}
+        .footer-content {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+        .footer-section h4 {{
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            font-weight: 700;
+            position: relative;
+            padding-bottom: 10px;
+            color: var(--footer-text-color);
+        }}
+        .footer-section h4::after {{
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 50px;
+            height: 2px;
+            background-color: var(--primary-color);
+        }}
+        .footer-contact-item {{
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }}
+        .footer-contact-item i {{
+            margin-right: 12px;
+            color: var(--primary-color);
+            margin-top: 4px;
+            font-size: 1.1em;
+        }}
+        .footer-contact-item a {{
+            color: var(--footer-text-color);
+            text-decoration: none;
+            transition: color 0.2s;
+        }}
+        .footer-contact-item a:hover {{
+            color: var(--primary-color);
+        }}
+        .footer-social {{
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }}
+        .footer-social a {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            color: var(--footer-text-color);
+            font-size: 1.2em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }}
+        .footer-social a:hover {{
+            background-color: var(--primary-color);
+            color: var(--dark-text-for-accent);
+            transform: translateY(-3px);
+        }}
+        .footer-bottom {{
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.85em;
+            opacity: 0.8;
+        }}
     </style>
 </head>
 <body>
@@ -2375,7 +2507,37 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         </div>
     </aside>
     <div id="toast" class="toast"></div>
-    <footer><p>&copy; 2024 Всі права захищені.</p></footer> <script>
+    
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Контакти</h4>
+                <div class="footer-contact-item">
+                    <i class="fa-solid fa-location-dot"></i>
+                    <span>{footer_address}</span>
+                </div>
+                <div class="footer-contact-item">
+                    <i class="fa-solid fa-phone"></i>
+                    <a href="tel:{footer_phone}">{footer_phone}</a>
+                </div>
+                 <div class="footer-contact-item">
+                    <i class="fa-solid fa-clock"></i>
+                    <span>{working_hours}</span>
+                </div>
+            </div>
+            <div class="footer-section">
+                <h4>Ми в соцмережах</h4>
+                <div class="footer-social">
+                    {social_links_html}
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 {site_title}. Всі права захищені.</p>
+        </div>
+    </footer>
+
+    <script>
         document.addEventListener('DOMContentLoaded', () => {{
             const TABLE_ID = {table_id};
             let cart = {{}};
@@ -2631,7 +2793,6 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                     showToast(result.message);
                     if (response.ok) {{
                         cart = {{}};
-                        // Перезавантажуємо сторінку, щоб оновити історію замовлень і загальний рахунок
                         setTimeout(() => window.location.reload(), 1500);
                     }}
                 }} catch (error) {{
@@ -2650,8 +2811,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
 </html>
 """
 
-# --- NEW: TEMPLATE FOR DESIGN & SEO SETTINGS ---
-# Додано нові поля для кольорів та розширено список шрифтів
+# Цей шаблон залишаємо тут для сумісності, хоча він також присутній у admin_design_settings.py
 ADMIN_DESIGN_SETTINGS_BODY = """
 <div class="card">
     <form action="/admin/design_settings" method="post">
@@ -2668,35 +2828,70 @@ ADMIN_DESIGN_SETTINGS_BODY = """
 
         <h2 style="margin-top: 2rem;"><i class="fa-solid fa-palette"></i> Дизайн та Кольори</h2>
         
-        <label for="primary_color">Основний колір (Акцент):</label>
-        <input type="color" id="primary_color" name="primary_color" value="{primary_color}">
+        <div class="form-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+                <label for="primary_color">Основний колір (Акцент):</label>
+                <input type="color" id="primary_color" name="primary_color" value="{primary_color}" style="width: 100%; height: 40px;">
+            </div>
+            <div>
+                <label for="secondary_color">Додатковий колір:</label>
+                <input type="color" id="secondary_color" name="secondary_color" value="{secondary_color}" style="width: 100%; height: 40px;">
+            </div>
+            <div>
+                <label for="background_color">Колір фону сторінки:</label>
+                <input type="color" id="background_color" name="background_color" value="{background_color}" style="width: 100%; height: 40px;">
+            </div>
+            <div>
+                <label for="text_color">Колір основного тексту:</label>
+                <input type="color" id="text_color" name="text_color" value="{text_color}" style="width: 100%; height: 40px;">
+            </div>
+            <div>
+                <label for="footer_bg_color">Фон підвалу (Footer):</label>
+                <input type="color" id="footer_bg_color" name="footer_bg_color" value="{footer_bg_color}" style="width: 100%; height: 40px;">
+            </div>
+            <div>
+                <label for="footer_text_color">Текст підвалу:</label>
+                <input type="color" id="footer_text_color" name="footer_text_color" value="{footer_text_color}" style="width: 100%; height: 40px;">
+            </div>
+        </div>
         
-        <label for="secondary_color">Додатковий колір (Наприклад, для рамок):</label>
-        <input type="color" id="secondary_color" name="secondary_color" value="{secondary_color}">
+        <div style="margin-top: 1rem;">
+            <label for="font_family_sans">Основний шрифт (Без засічок):</label>
+            <select id="font_family_sans" name="font_family_sans">
+                {font_options_sans}
+            </select>
+            
+            <label for="font_family_serif">Шрифт заголовків (Із засічками):</label>
+            <select id="font_family_serif" name="font_family_serif">
+                {font_options_serif}
+            </select>
+        </div>
 
-        <label for="background_color">Колір фону:</label>
-        <input type="color" id="background_color" name="background_color" value="{background_color}">
-        
-        <label for="font_family_sans">Основний шрифт (Без засічок):</label>
-        <select id="font_family_sans" name="font_family_sans">
-            <option value="Golos Text" {font_select_sans_Golos_Text}>Golos Text (За замовчуванням)</option>
-            <option value="Inter" {font_select_sans_Inter}>Inter</option>
-            <option value="Roboto" {font_select_sans_Roboto}>Roboto</option>
-            <option value="Open Sans" {font_select_sans_Open_Sans}>Open Sans</option>
-            <option value="Montserrat" {font_select_sans_Montserrat}>Montserrat</option>
-            <option value="Lato" {font_select_sans_Lato}>Lato</option>
-            <option value="Nunito" {font_select_sans_Nunito}>Nunito</option>
-        </select>
-        
-        <label for="font_family_serif">Шрифт заголовків (Із засічками):</label>
-        <select id="font_family_serif" name="font_family_serif">
-            <option value="Playfair Display" {font_select_serif_Playfair_Display}>Playfair Display (За замовчуванням)</option>
-            <option value="Lora" {font_select_serif_Lora}>Lora</option>
-            <option value="Merriweather" {font_select_serif_Merriweather}>Merriweather</option>
-            <option value="EB Garamond" {font_select_serif_EB_Garamond}>EB Garamond</option>
-            <option value="PT Serif" {font_select_serif_PT_Serif}>PT Serif</option>
-            <option value="Cormorant" {font_select_serif_Cormorant}>Cormorant</option>
-        </select>
+        <h2 style="margin-top: 2rem;"><i class="fa-solid fa-circle-info"></i> Підвал сайту (Контакти)</h2>
+        <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <label for="footer_address"><i class="fa-solid fa-location-dot"></i> Адреса:</label>
+                <input type="text" id="footer_address" name="footer_address" value="{footer_address}" placeholder="вул. Прикладна, 10">
+            </div>
+            <div>
+                <label for="footer_phone"><i class="fa-solid fa-phone"></i> Телефон:</label>
+                <input type="text" id="footer_phone" name="footer_phone" value="{footer_phone}" placeholder="+380 XX XXX XX XX">
+            </div>
+            <div>
+                <label for="working_hours"><i class="fa-solid fa-clock"></i> Час роботи:</label>
+                <input type="text" id="working_hours" name="working_hours" value="{working_hours}" placeholder="Пн-Нд: 10:00 - 22:00">
+            </div>
+        </div>
+        <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
+            <div>
+                <label for="instagram_url"><i class="fa-brands fa-instagram"></i> Instagram (посилання):</label>
+                <input type="text" id="instagram_url" name="instagram_url" value="{instagram_url}" placeholder="https://instagram.com/...">
+            </div>
+            <div>
+                <label for="facebook_url"><i class="fa-brands fa-facebook"></i> Facebook (посилання):</label>
+                <input type="text" id="facebook_url" name="facebook_url" value="{facebook_url}" placeholder="https://facebook.com/...">
+            </div>
+        </div>
         
         <h2 style="margin-top: 2rem;"><i class="fa-brands fa-telegram"></i> Тексти Telegram-бота</h2>
         

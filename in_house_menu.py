@@ -64,7 +64,6 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
     products = [{"id": p.id, "name": p.name, "description": p.description, "price": p.price, "image_url": p.image_url, "category_id": p.category_id} for p in products_res.scalars().all()]
 
     # --- НОВЕ: Отримуємо історію неоплачених замовлень для цього столика ---
-    # Вважаємо "неоплаченими" всі, де статус не є фінальним (успіх або відміна)
     final_statuses_res = await session.execute(
         select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True))
     )
@@ -94,34 +93,65 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
 
     # Передаємо дані меню та історії в шаблон через JSON
     menu_data = json.dumps({"categories": categories, "products": products})
-    history_data = json.dumps(history_list) # Передаємо історію як JSON
+    history_data = json.dumps(history_list) 
 
     # --- Design variables ---
     site_title = settings.site_title or "Назва"
+    
+    # Основні кольори
     primary_color_val = settings.primary_color or "#5a5a5a"
     secondary_color_val = settings.secondary_color or "#eeeeee"
     background_color_val = settings.background_color or "#f4f4f4"
+    
+    # --- НОВІ КОЛЬОРИ ---
+    text_color_val = settings.text_color or "#333333"
+    footer_bg_color_val = settings.footer_bg_color or "#333333"
+    footer_text_color_val = settings.footer_text_color or "#ffffff"
+    # --------------------
+
     font_family_sans_val = settings.font_family_sans or "Golos Text"
     font_family_serif_val = settings.font_family_serif or "Playfair Display"
-    # ---------------------------------------
+
+    # --- НОВЕ: Соцмережі та контакти ---
+    social_links = []
+    if settings.instagram_url:
+        social_links.append(f'<a href="{html_module.escape(settings.instagram_url)}" target="_blank"><i class="fa-brands fa-instagram"></i></a>')
+    if settings.facebook_url:
+        social_links.append(f'<a href="{html_module.escape(settings.facebook_url)}" target="_blank"><i class="fa-brands fa-facebook"></i></a>')
+    
+    social_links_html = "".join(social_links)
+    # -----------------------------------
 
     return HTMLResponse(content=IN_HOUSE_MENU_HTML_TEMPLATE.format(
         table_name=html_module.escape(table.name),
         table_id=table.id,
         logo_html=logo_html,
         menu_data=menu_data,
-        history_data=history_data,   # <-- НОВЕ: Передаємо JSON історії
-        grand_total=grand_total,     # <-- НОВЕ: Загальна сума
+        history_data=history_data,   
+        grand_total=grand_total,     
         site_title=html_module.escape(site_title),
         seo_description=html_module.escape(settings.seo_description or ""),
         seo_keywords=html_module.escape(settings.seo_keywords or ""),
+        
         primary_color_val=primary_color_val,
         secondary_color_val=secondary_color_val,
         background_color_val=background_color_val,
+        
+        # Передаємо нові змінні
+        text_color_val=text_color_val,
+        footer_bg_color_val=footer_bg_color_val,
+        footer_text_color_val=footer_text_color_val,
+        
         font_family_sans_val=font_family_sans_val,
         font_family_serif_val=font_family_serif_val,
         font_family_sans_encoded=url_quote_plus(font_family_sans_val),
-        font_family_serif_encoded=url_quote_plus(font_family_serif_val)
+        font_family_serif_encoded=url_quote_plus(font_family_serif_val),
+
+        # Контакти підвалу
+        footer_address=html_module.escape(settings.footer_address or "Адреса не вказана"),
+        footer_phone=html_module.escape(settings.footer_phone or ""),
+        working_hours=html_module.escape(settings.working_hours or ""),
+        social_links_html=social_links_html
     ))
 
 @router.post("/api/menu/table/{table_id}/call_waiter", response_class=JSONResponse)

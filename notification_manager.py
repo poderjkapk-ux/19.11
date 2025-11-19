@@ -113,18 +113,18 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
         return
 
     # 2. Отримуємо деталі товарів з БД (щоб знати preparation_area)
-    names = list(products_map.keys())
-    products_res = await session.execute(select(Product).where(Product.name.in_(names)))
-    db_products = products_res.scalars().all()
+    products_res = await session.execute(select(Product))
+    all_products = products_res.scalars().all()
+    
+    # Словник для швидкого пошуку продукту за "чистою" назвою
+    db_products = {p.name.strip(): p for p in all_products}
 
     kitchen_items = []
     bar_items = []
 
-    # Словник для швидкого пошуку продукту
-    products_by_name = {p.name: p for p in db_products}
-
     for name, qty in products_map.items():
-        product = products_by_name.get(name)
+        product = db_products.get(name.strip())
+        
         if product:
             item_str = f"- {html.quote(name)} x {qty}"
             if product.preparation_area == 'bar':
@@ -132,6 +132,9 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
             else:
                 # За замовчуванням або якщо kitchen
                 kitchen_items.append(item_str)
+        else:
+            # Якщо продукт не знайдено в БД, відправляємо на кухню як fallback
+            kitchen_items.append(f"- {html.quote(name)} x {qty}")
 
     # 3. Відправляємо на Кухню
     if kitchen_items:
@@ -141,7 +144,8 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
             items=kitchen_items,
             role_filter=Role.can_receive_kitchen_orders == True,
             title="🧑‍🍳 ЗАМОВЛЕННЯ НА КУХНЮ",
-            session=session
+            session=session,
+            area="kitchen" # <-- Додано маркер цеху
         )
 
     # 4. Відправляємо на Бар
@@ -152,11 +156,12 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
             items=bar_items,
             role_filter=Role.can_receive_bar_orders == True,
             title="🍹 ЗАМОВЛЕННЯ НА БАР",
-            session=session
+            session=session,
+            area="bar" # <-- Додано маркер цеху
         )
 
 
-async def send_group_notification(bot: Bot, order: Order, items: list, role_filter, title: str, session: AsyncSession):
+async def send_group_notification(bot: Bot, order: Order, items: list, role_filter, title: str, session: AsyncSession, area: str = "kitchen"):
     """
     Універсальна функція для відправки чека групі співробітників (повари або бармени).
     """
@@ -183,7 +188,6 @@ async def send_group_notification(bot: Bot, order: Order, items: list, role_filt
         
         table_info = ""
         if order.order_type == 'in_house' and order.table_id:
-            # Завантажуємо назву столика, якщо вона ще не завантажена
             if 'table' not in order.__dict__:
                 await session.refresh(order, ['table'])
             if order.table:
@@ -196,8 +200,8 @@ async def send_group_notification(bot: Bot, order: Order, items: list, role_filt
                 f"<i>Натисніть 'Видача', коли буде готове.</i>")
         
         kb = InlineKeyboardBuilder()
-        # Callback той самий, оскільки логіка зміни статусу на "Готовий" однакова
-        kb.row(InlineKeyboardButton(text=f"✅ Видача #{order.id}", callback_data=f"chef_ready_{order.id}"))
+        # Додаємо area (kitchen/bar) в callback_data
+        kb.row(InlineKeyboardButton(text=f"✅ Видача #{order.id}", callback_data=f"chef_ready_{order.id}_{area}"))
         
         for emp in employees:
             try:
@@ -242,7 +246,14 @@ async def notify_all_parties_on_status_change(
 
     # 3. СПОВІЩЕННЯ ПІД ЧАС ВИДАЧІ ("Готовий до видачі")
     if new_status.name == "Готовий до видачі":
-        ready_message = f"📢 <b>ЗАМОВЛЕННЯ ГОТОВЕ ДО ВИДАЧІ: #{order.id}</b>! \n"
+        # --- ВИЗНАЧЕННЯ ДЖЕРЕЛА (Хто приготував?) ---
+        source_label = ""
+        if "Кухня" in actor_info or "Повар" in actor_info:
+            source_label = " (🍳 КУХНЯ)"
+        elif "Бар" in actor_info or "Бармен" in actor_info:
+            source_label = " (🍹 БАР)"
+        
+        ready_message = f"📢 <b>ГОТОВО ДО ВИДАЧІ{source_label}: #{order.id}</b>! \n"
         
         target_employees = []
         # Якщо є офіціант (для замовлення в закладі)

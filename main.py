@@ -743,11 +743,28 @@ async def get_web_ordering_page(session: AsyncSession = Depends(get_db_session))
     # --- NEW: Prepare design/SEO variables ---
     site_title = settings.site_title or "Назва"
     primary_color_val = settings.primary_color or "#5a5a5a"
+    
     # ДОДАНО: Нові кольори
     secondary_color_val = settings.secondary_color or "#eeeeee"
     background_color_val = settings.background_color or "#f4f4f4"
+    
+    # --- NEW: Advanced Colors ---
+    text_color_val = settings.text_color or "#333333"
+    footer_bg_color_val = settings.footer_bg_color or "#333333"
+    footer_text_color_val = settings.footer_text_color or "#ffffff"
+    # ----------------------------
+    
     font_family_sans_val = settings.font_family_sans or "Golos Text"
     font_family_serif_val = settings.font_family_serif or "Playfair Display"
+
+    # --- NEW: Footer Social Links ---
+    social_links = []
+    if settings.instagram_url:
+        social_links.append(f'<a href="{html.escape(settings.instagram_url)}" target="_blank"><i class="fa-brands fa-instagram"></i></a>')
+    if settings.facebook_url:
+        social_links.append(f'<a href="{html.escape(settings.facebook_url)}" target="_blank"><i class="fa-brands fa-facebook"></i></a>')
+    
+    social_links_html = "".join(social_links)
     # ---------------------------------------
 
     return HTMLResponse(content=WEB_ORDER_HTML.format(
@@ -756,13 +773,25 @@ async def get_web_ordering_page(session: AsyncSession = Depends(get_db_session))
         site_title=html.escape(site_title),
         seo_description=html.escape(settings.seo_description or ""),
         seo_keywords=html.escape(settings.seo_keywords or ""),
+        
         primary_color_val=primary_color_val,
-        secondary_color_val=secondary_color_val, # Додано
-        background_color_val=background_color_val, # Додано
+        secondary_color_val=secondary_color_val,
+        background_color_val=background_color_val,
+        text_color_val=text_color_val, # NEW
+        footer_bg_color_val=footer_bg_color_val, # NEW
+        footer_text_color_val=footer_text_color_val, # NEW
+
         font_family_sans_val=font_family_sans_val,
         font_family_serif_val=font_family_serif_val,
         font_family_sans_encoded=url_quote_plus(font_family_sans_val),
-        font_family_serif_encoded=url_quote_plus(font_family_serif_val)
+        font_family_serif_encoded=url_quote_plus(font_family_serif_val),
+        
+        # --- NEW: Footer Content ---
+        footer_address=html.escape(settings.footer_address or "Адреса не вказана"),
+        footer_phone=html.escape(settings.footer_phone or ""),
+        working_hours=html.escape(settings.working_hours or ""),
+        social_links_html=social_links_html
+        # ---------------------------
     ))
 
 

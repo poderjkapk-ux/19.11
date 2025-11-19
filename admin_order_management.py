@@ -46,6 +46,7 @@ def parse_products_str(products_str: str) -> dict:
         try:
             if " x " in part:
                 name, qty = part.rsplit(" x ", 1)
+                # strip() видаляє пробіли, що може викликати розбіжність з БД, якщо там вони є
                 result[name.strip()] = int(qty)
         except ValueError: continue
     return result
@@ -78,12 +79,17 @@ async def get_manage_order_page(
     if products_map:
         product_names = list(products_map.keys())
         # Отримуємо інформацію про цех для кожного товару
-        products_res = await session.execute(select(Product).where(Product.name.in_(product_names)))
-        db_products = {p.name: p for p in products_res.scalars().all()}
+        # Шукаємо товари, ігноруючи можливі розбіжності в пробілах
+        products_res = await session.execute(select(Product))
+        all_products = products_res.scalars().all()
+        
+        # Створюємо мапу, де ключ - це назва товару БЕЗ пробілів по краях
+        db_products = {p.name.strip(): p for p in all_products}
 
         for name, qty in products_map.items():
             icon = "❓"
-            if prod := db_products.get(name):
+            # Шукаємо по "чистій" назві
+            if prod := db_products.get(name.strip()):
                 if prod.preparation_area == 'kitchen':
                     icon = "🍳" # Кухня
                 elif prod.preparation_area == 'bar':
@@ -137,7 +143,7 @@ async def get_manage_order_page(
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(
         title=f"Керування замовленням #{order.id}", 
         body=body, 
-        site_title=settings.site_title or "Назва",
+        site_title=settings.site_title or "Назва", 
         **active_classes
     ))
 
