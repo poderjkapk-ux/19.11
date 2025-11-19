@@ -1,0 +1,11 @@
+python-multipart
+fastapi
+uvicorn[standard]
+aiogram
+sqlalchemy
+asyncpg
+python-dotenv
+aiofiles
+httpx
+qrcode
+Pillow
