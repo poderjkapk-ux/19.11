@@ -13,7 +13,7 @@ from typing import Dict, Any, Generator, Optional, List
 from datetime import date, datetime, timedelta
 import html
 import json
-from dotenv import load_dotenv  # <-- --- Завантаження .env ---
+from dotenv import load_dotenv
 from urllib.parse import quote_plus as url_quote_plus
 
 # --- FastAPI & Uvicorn ---
@@ -59,11 +59,10 @@ from admin_tables import router as admin_tables_router
 from in_house_menu import router as in_house_menu_router
 from admin_design_settings import router as admin_design_router
 from admin_inventory import router as admin_inventory_router # Склад
-from admin_cash import router as admin_cash_router # <--- ДОДАНО: КАСА
+from admin_cash import router as admin_cash_router # Каса
 # -----------------------------------------------
 
 # --- КОНФІГУРАЦІЯ ---
-# Завантажуємо .env В САМОМУ ПОЧАТКУ
 load_dotenv()
 
 PRODUCTS_PER_PAGE = 5
@@ -124,19 +123,15 @@ async def handle_dynamic_menu_item(message: Message, session: AsyncSession):
 async def command_start_handler(message: Message, state: FSMContext, session: AsyncSession):
     await state.clear()
     
-    # --- MODIFIED: Fetch settings to get custom welcome message ---
     settings = await session.get(Settings, 1) or Settings()
     
     default_welcome = f"Шановний {{user_name}}, ласкаво просимо! 👋\n\nМи раді вас бачити. Оберіть опцію:"
     welcome_template = settings.telegram_welcome_message or default_welcome
     
-    # Replace placeholder with user's name
     try:
         caption = welcome_template.format(user_name=html.escape(message.from_user.full_name))
     except (KeyError, ValueError):
-        # Fallback if the admin made a mistake in the template string
         caption = default_welcome.format(user_name=html.escape(message.from_user.full_name))
-    # -------------------------------------------------------------
 
     keyboard = await get_main_reply_keyboard(session)
     await message.answer(caption, reply_markup=keyboard)
@@ -175,7 +170,6 @@ async def back_to_start_menu(callback: CallbackQuery, state: FSMContext, session
     except TelegramBadRequest as e:
         logging.warning(f"Не вдалося видалити повідомлення в back_to_start_menu: {e}")
 
-    # --- MODIFIED: Use the same logic as command_start_handler ---
     settings = await session.get(Settings, 1) or Settings()
     default_welcome = f"Шановний {{user_name}}, ласкаво просимо! 👋\n\nМи раді вас бачити. Оберіть опцію:"
     welcome_template = settings.telegram_welcome_message or default_welcome
@@ -183,7 +177,6 @@ async def back_to_start_menu(callback: CallbackQuery, state: FSMContext, session
         caption = welcome_template.format(user_name=html.escape(callback.from_user.full_name))
     except (KeyError, ValueError):
         caption = default_welcome.format(user_name=html.escape(callback.from_user.full_name))
-    # -------------------------------------------------------------
 
     keyboard = await get_main_reply_keyboard(session)
     await callback.message.answer(caption, reply_markup=keyboard)
@@ -224,13 +217,11 @@ async def show_my_orders(message_or_callback: Message | CallbackQuery, session: 
     else:
         await message.answer(text, reply_markup=kb)
 
-# --- Функція show_menu ---
 async def show_menu(message_or_callback: Message | CallbackQuery, session: AsyncSession):
     is_callback = isinstance(message_or_callback, CallbackQuery)
     message = message_or_callback.message if is_callback else message_or_callback
 
     keyboard = InlineKeyboardBuilder()
-    # Додано .where(Category.show_on_delivery_site == True)
     categories_result = await session.execute(
         sa.select(Category)
         .where(Category.show_on_delivery_site == True)
@@ -260,7 +251,6 @@ async def show_menu(message_or_callback: Message | CallbackQuery, session: Async
         await message_or_callback.answer()
     else:
         await message.answer(text, reply_markup=keyboard.as_markup())
-# --- КІНЕЦЬ show_menu ---
 
 @dp.callback_query(F.data == "menu")
 async def show_menu_callback(callback: CallbackQuery, session: AsyncSession):
@@ -283,7 +273,7 @@ async def show_category_paginated(callback: CallbackQuery, session: AsyncSession
     query_products = sa.select(Product).where(Product.category_id == category_id, Product.is_active == True).order_by(Product.name).offset(offset).limit(PRODUCTS_PER_PAGE)
 
     total_products_res = await session.execute(query_total)
-    total_products = total_products_res.scalar_one_or_none() or 0 # Ensure total is not None
+    total_products = total_products_res.scalar_one_or_none() or 0
 
     total_pages = (total_products + PRODUCTS_PER_PAGE - 1) // PRODUCTS_PER_PAGE
 
@@ -719,9 +709,9 @@ app.include_router(in_house_menu_router) # Для QR-меню
 app.include_router(clients_router)
 app.include_router(admin_order_router)
 app.include_router(admin_tables_router) # Для адмінки столиків
-app.include_router(admin_design_router) # <-- NEW ROUTER FOR DESIGN
+app.include_router(admin_design_router) # Дизайн
 app.include_router(admin_inventory_router) # Склад
-app.include_router(admin_cash_router) # <--- ДОДАНО: КАСА
+app.include_router(admin_cash_router) # Каса
 # ------------------------------------
 
 class DbSessionMiddleware:
@@ -810,13 +800,11 @@ async def get_menu_page_content(item_id: int, session: AsyncSession = Depends(ge
 # --- Функція /api/menu ---
 @app.get("/api/menu")
 async def get_menu_data(session: AsyncSession = Depends(get_db_session)):
-    # Додано .where(Category.show_on_delivery_site == True)
     categories_res = await session.execute(
         sa.select(Category)
         .where(Category.show_on_delivery_site == True)
         .order_by(Category.sort_order, Category.name)
     )
-    # Додано join и фільтрація
     products_res = await session.execute(
         sa.select(Product)
         .join(Category, Product.category_id == Category.id)
@@ -852,11 +840,15 @@ async def place_web_order(order_data: dict = Body(...), session: AsyncSession = 
     address = order_data.get('address') if is_delivery else None
     order_type = 'delivery' if is_delivery else 'pickup'
 
+    # НОВЕ: Отримуємо метод оплати (за замовчуванням готівка)
+    payment_method = order_data.get('payment_method', 'cash')
+
     order = Order(
         customer_name=order_data.get('customer_name'), phone_number=order_data.get('phone_number'),
         address=address, products=products_str, total_price=total_price,
         is_delivery=is_delivery, delivery_time=order_data.get('delivery_time', "Якнайшвидше"),
-        order_type=order_type
+        order_type=order_type,
+        payment_method=payment_method # <-- Зберігаємо метод оплати
     )
     session.add(order)
     await session.commit()
@@ -983,7 +975,7 @@ async def add_product(
     price: int = Form(...), 
     description: str = Form(""), 
     category_id: int = Form(...),
-    preparation_area: str = Form("kitchen"), # <-- NEW FIELD
+    preparation_area: str = Form("kitchen"), 
     image: UploadFile = File(None),
     session: AsyncSession = Depends(get_db_session), 
     username: str = Depends(check_credentials)
@@ -1005,7 +997,7 @@ async def add_product(
         description=description, 
         image_url=image_url, 
         category_id=category_id,
-        preparation_area=preparation_area # <-- SAVE FIELD
+        preparation_area=preparation_area
     ))
     await session.commit()
     return RedirectResponse(url="/admin/products", status_code=303)
@@ -1067,7 +1059,7 @@ async def edit_product(
     price: int = Form(...), 
     description: str = Form(""), 
     category_id: int = Form(...),
-    preparation_area: str = Form(...), # <-- NEW ARGUMENT
+    preparation_area: str = Form(...), 
     image: UploadFile = File(None),
     session: AsyncSession = Depends(get_db_session), 
     username: str = Depends(check_credentials)
@@ -1080,7 +1072,7 @@ async def edit_product(
     product.price = price
     product.description = description
     product.category_id = category_id
-    product.preparation_area = preparation_area # <-- UPDATE FIELD
+    product.preparation_area = preparation_area 
 
     if image and image.filename:
         if product.image_url and os.path.exists(product.image_url):
@@ -1444,7 +1436,6 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
 
     rows_html = rows if rows else "<tr><td colspan='12'>Немає статусів</td></tr>"
     
-    # Update colspan and column headers
     body = f"""
     {error_html}
     <style>
@@ -1523,7 +1514,7 @@ async def add_status(
     visible_to_courier: Optional[bool] = Form(False),
     visible_to_waiter: Optional[bool] = Form(False),
     visible_to_chef: Optional[bool] = Form(False),
-    visible_to_bartender: Optional[bool] = Form(False), # <--- NEW FIELD
+    visible_to_bartender: Optional[bool] = Form(False),
     requires_kitchen_notify: Optional[bool] = Form(False),
     is_completed_status: Optional[bool] = Form(False),
     is_cancelled_status: Optional[bool] = Form(False),
@@ -1537,7 +1528,7 @@ async def add_status(
         visible_to_courier=bool(visible_to_courier),
         visible_to_waiter=bool(visible_to_waiter),
         visible_to_chef=bool(visible_to_chef),
-        visible_to_bartender=bool(visible_to_bartender), # <--- SAVE NEW FIELD
+        visible_to_bartender=bool(visible_to_bartender), 
         requires_kitchen_notify=bool(requires_kitchen_notify),
         is_completed_status=bool(is_completed_status),
         is_cancelled_status=bool(is_cancelled_status)
@@ -1561,7 +1552,7 @@ async def edit_status(
 
     allowed_fields = [
         "notify_customer", "visible_to_operator", "visible_to_courier", 
-        "visible_to_waiter", "visible_to_chef", "visible_to_bartender", # <--- ADD NEW FIELD
+        "visible_to_waiter", "visible_to_chef", "visible_to_bartender", 
         "requires_kitchen_notify", 
         "is_completed_status", "is_cancelled_status"
     ]
@@ -1582,10 +1573,10 @@ async def delete_status(status_id: int, session: AsyncSession = Depends(get_db_s
         try:
             await session.delete(status_to_delete)
             await session.commit()
-        except IntegrityError: # Catch the specific database error
+        except IntegrityError: 
             logging.warning(f"Attempted to delete status {status_id} which is in use.")
-            return RedirectResponse(url="/admin/statuses?error=in_use", status_code=303) # Redirect with error flag
-        except Exception as e: # Catch other potential errors
+            return RedirectResponse(url="/admin/statuses?error=in_use", status_code=303) 
+        except Exception as e: 
             logging.error(f"Error deleting status {status_id}: {e}")
             raise HTTPException(status_code=500, detail="Не вдалося видалити статус.")
     return RedirectResponse(url="/admin/statuses", status_code=303)
@@ -1597,7 +1588,6 @@ async def admin_roles(session: AsyncSession = Depends(get_db_session), username:
     roles_res = await session.execute(sa.select(Role).order_by(Role.id))
     roles = roles_res.scalars().all()
 
-    # NOTE: The models.py was updated with can_receive_bar_orders. We must ensure it's loaded.
     rows = "".join([f"""
     <tr>
         <td>{r.id}</td>
@@ -1613,9 +1603,8 @@ async def admin_roles(session: AsyncSession = Depends(get_db_session), username:
     </tr>""" for r in roles])
 
     if not rows:
-        rows = "<tr><td colspan='8'>Немає ролей</td></tr>" # Colspan adjusted
+        rows = "<tr><td colspan='8'>Немає ролей</td></tr>"
 
-    # Update HTML form to include Barman checkbox
     body = f"""
     <div class="card">
         <ul class="nav-tabs">
@@ -1668,7 +1657,7 @@ async def add_role(name: str = Form(...),
                    can_be_assigned: Optional[bool] = Form(False),
                    can_serve_tables: Optional[bool] = Form(False),
                    can_receive_kitchen_orders: Optional[bool] = Form(False), 
-                   can_receive_bar_orders: Optional[bool] = Form(False), # <--- SAVE NEW FIELD
+                   can_receive_bar_orders: Optional[bool] = Form(False), 
                    session: AsyncSession = Depends(get_db_session),
                    username: str = Depends(check_credentials)):
     new_role = Role(name=name,
@@ -1676,7 +1665,7 @@ async def add_role(name: str = Form(...),
                     can_be_assigned=bool(can_be_assigned),
                     can_serve_tables=bool(can_serve_tables),
                     can_receive_kitchen_orders=bool(can_receive_kitchen_orders),
-                    can_receive_bar_orders=bool(can_receive_bar_orders)) # <--- SAVE NEW FIELD
+                    can_receive_bar_orders=bool(can_receive_bar_orders)) 
     session.add(new_role)
     await session.commit()
     return RedirectResponse(url="/admin/roles", status_code=303)
@@ -1688,7 +1677,6 @@ async def get_edit_role_form(role_id: int, session: AsyncSession = Depends(get_d
     role = await session.get(Role, role_id)
     if not role: raise HTTPException(status_code=404, detail="Роль не знайдено")
 
-    # Update HTML to include Barman checkbox
     body = f"""
     <div class="card">
         <ul class="nav-tabs"><li class="nav-item"><a href="/admin/employees">Співробітники</a></li><li class="nav-item"><a href="/admin/roles" class="active">Ролі</a></li></ul>
@@ -1736,7 +1724,7 @@ async def edit_role(role_id: int, name: str = Form(...), can_manage_orders: Opti
         role.can_be_assigned = bool(can_be_assigned)
         role.can_serve_tables = bool(can_serve_tables)
         role.can_receive_kitchen_orders = bool(can_receive_kitchen_orders)
-        role.can_receive_bar_orders = bool(can_receive_bar_orders) # <--- SAVE NEW FIELD
+        role.can_receive_bar_orders = bool(can_receive_bar_orders) 
         await session.commit()
     return RedirectResponse(url="/admin/roles", status_code=303)
 
@@ -1756,7 +1744,7 @@ async def delete_role(role_id: int, session: AsyncSession = Depends(get_db_sessi
 
             await session.delete(role)
             await session.commit()
-        except IntegrityError: # Fallback, though the check above should prevent this
+        except IntegrityError: 
             logging.error(f"IntegrityError deleting role {role_id}, likely still in use.")
             raise HTTPException(status_code=400, detail="Неможливо видалити роль, оскільки до неї прив'язані співробітники.")
         except Exception as e:

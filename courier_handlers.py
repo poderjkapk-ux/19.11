@@ -351,11 +351,16 @@ async def _generate_waiter_order_view(order: Order, session: AsyncSession):
         accepted_by_text = "<b>Прийнято:</b> <i>Очікує...</i>\n\n"
     
     table_name = order.table.name if order.table else "N/A"
+    
+    # Відображаємо спосіб оплати, якщо він вже відомий і замовлення оплачено
+    payment_info = ""
+    if order.status.is_completed_status:
+         payment_info = f"\n<b>Оплата:</b> {'💳 Картка' if order.payment_method == 'card' else '💵 Готівка'}"
 
     text = (f"<b>Керування замовленням #{order.id}</b> (Стіл: {table_name})\n\n"
             f"<b>Склад:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
             f"{accepted_by_text}"
-            f"<b>Поточний статус:</b> {status_name}")
+            f"<b>Поточний статус:</b> {status_name}{payment_info}")
 
     kb = InlineKeyboardBuilder()
     
@@ -490,13 +495,19 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         status_name = order.status.name if order.status else 'Невідомий'
         address_info = order.address if order.is_delivery else 'Самовивіз'
+        
+        # Додаємо інформацію про оплату
+        pay_info = ""
+        if order.status.is_completed_status:
+            pay_info = f"\n<b>Оплата:</b> {'💳 Картка' if order.payment_method == 'card' else '💵 Готівка'}"
+            
         text = (f"<b>Деталі замовлення #{order.id}</b>\n\n"
                 f"Статус: {status_name}\n"
                 f"Адреса: {html_module.escape(address_info)}\n"
                 f"Клієнт: {html_module.escape(order.customer_name)}\n"
                 f"Телефон: {html_module.escape(order.phone_number)}\n" 
                 f"Склад: {html_module.escape(order.products)}\n"
-                f"Сума: {order.total_price} грн\n\n")
+                f"Сума: {order.total_price} грн{pay_info}\n\n")
         
         kb = InlineKeyboardBuilder()
         statuses_res = await session.execute(select(OrderStatus).where(OrderStatus.visible_to_courier == True).order_by(OrderStatus.id))
@@ -522,10 +533,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
         client_bot = dp_admin.get("client_bot")
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == callback.from_user.id).options(joinedload(Employee.role)))
         
-        # Розбираємо нові дані callback, які можуть містити area
         parts = callback.data.split("_")
         order_id = int(parts[2])
-        # Якщо area передано (для нових кнопок), беремо його, інакше дефолт
         area = parts[3] if len(parts) > 3 else 'kitchen'
         
         order = await session.get(Order, order_id, options=[joinedload(Order.status), joinedload(Order.table), joinedload(Order.accepted_by_waiter)])
@@ -537,7 +546,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
         old_status_name = order.status.name
         actor_info = f"{employee.role.name if employee else 'Кухня/Бар'}: {employee.full_name if employee else 'Невідомий'}"
         
-        # Уточнюємо, хто саме натиснув кнопку, для логів
         if area == 'bar': actor_info += " (Бар)"
         else: actor_info += " (Кухня)"
         
@@ -555,9 +563,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
             session=session
         )
 
-        # Отримуємо список товарів САМЕ ЦЬОГО ЦЕХУ для оновлення повідомлення
         products_formatted = await _get_filtered_order_text(session, order, area)
-        # Fallback, якщо раптом щось пішло не так
         if not products_formatted:
              products_formatted = html_module.escape(order.products or '').replace(", ", "\n")
 
@@ -568,19 +574,71 @@ def register_courier_handlers(dp_admin: Dispatcher):
         
         await callback.answer(f"Сигнал видачі для #{order.id} відправлено!")
 
+    # --- ЛОГІКА ПЕРЕХОПЛЕННЯ ОПЛАТИ ---
+    @dp_admin.callback_query(F.data.startswith("staff_ask_payment_"))
+    async def staff_ask_payment_method(callback: CallbackQuery, session: AsyncSession):
+        """
+        Проміжний крок: запитує метод оплати перед встановленням фінального статусу.
+        data: staff_ask_payment_{order_id}_{status_id}
+        """
+        parts = callback.data.split("_")
+        order_id, status_id = int(parts[3]), int(parts[4])
+        
+        order = await session.get(Order, order_id)
+        if not order: return await callback.answer("Замовлення не знайдено.")
+        
+        kb = InlineKeyboardBuilder()
+        # Кнопки ведуть на фінальну зміну статусу, але додають суфікс методу оплати
+        kb.row(InlineKeyboardButton(text="💵 Готівка", callback_data=f"staff_set_status_{order_id}_{status_id}_cash"))
+        kb.row(InlineKeyboardButton(text="💳 Картка / Термінал", callback_data=f"staff_set_status_{order_id}_{status_id}_card"))
+        
+        # Кнопка повернення
+        if order.order_type == "in_house":
+             kb.row(InlineKeyboardButton(text="🔙 Скасувати", callback_data=f"waiter_manage_order_{order_id}"))
+        else:
+             kb.row(InlineKeyboardButton(text="🔙 Скасувати", callback_data=f"courier_view_order_{order_id}"))
+        
+        await callback.message.edit_text(
+            f"💰 <b>Оплата замовлення #{order.id}</b>\nСума: {order.total_price} грн\n\nОберіть спосіб оплати:",
+            reply_markup=kb.as_markup()
+        )
+        await callback.answer()
+
     @dp_admin.callback_query(F.data.startswith("staff_set_status_"))
     async def staff_set_status(callback: CallbackQuery, session: AsyncSession, **kwargs: Dict[str, Any]):
-        client_bot = dp_admin.get("client_bot") # Додано client_bot
+        client_bot = dp_admin.get("client_bot")
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == callback.from_user.id).options(joinedload(Employee.role)))
         actor_info = f"{employee.role.name}: {employee.full_name}" if employee else f"Співробітник (ID: {callback.from_user.id})"
         
-        order_id, new_status_id = map(int, callback.data.split("_")[3:])
+        parts = callback.data.split("_")
+        order_id, new_status_id = int(parts[3]), int(parts[4])
+
+        # Перевіряємо, чи передано метод оплати в callback (5-й елемент)
+        payment_method_override = parts[5] if len(parts) > 5 else None
+
         order = await session.get(Order, order_id, options=[joinedload(Order.table)])
         if not order: return await callback.answer("Замовлення не знайдено.")
         
         new_status = await session.get(OrderStatus, new_status_id)
         old_status_name = order.status.name if order.status else "Невідомий"
         
+        # --- ЛОГІКА ПЕРЕХОПЛЕННЯ ОПЛАТИ ---
+        # Якщо статус є "Завершеним" (is_completed_status=True) і метод не обрано
+        if new_status.is_completed_status and not payment_method_override:
+            kb = InlineKeyboardBuilder()
+            kb.row(InlineKeyboardButton(text="💵 Готівка", callback_data=f"staff_set_status_{order_id}_{new_status_id}_cash"))
+            kb.row(InlineKeyboardButton(text="💳 Картка", callback_data=f"staff_set_status_{order_id}_{new_status_id}_card"))
+            
+            await callback.message.edit_text(
+                f"⚠️ <b>Уточніть оплату для замовлення #{order.id}:</b>", 
+                reply_markup=kb.as_markup()
+            )
+            return
+
+        # Якщо метод оплати передано, оновлюємо його
+        if payment_method_override:
+            order.payment_method = payment_method_override
+
         order.status_id = new_status.id
         session.add(OrderStatusHistory(order_id=order.id, status_id=new_status.id, actor_info=actor_info))
         await session.commit()
@@ -595,12 +653,14 @@ def register_courier_handlers(dp_admin: Dispatcher):
             session=session
         )
 
-        await callback.answer(f"Статус змінено: {new_status.name}")
+        pay_text = f" ({'Готівка' if order.payment_method == 'cash' else 'Картка'})" if new_status.is_completed_status else ""
+        await callback.answer(f"Статус змінено: {new_status.name}{pay_text}")
         
         if order.order_type == "in_house":
             await manage_in_house_order_handler(callback, session, order_id=order.id)
         else:
-            await show_courier_orders(callback, session)
+            await courier_view_order_details(callback, session) # Повертаємось до деталей замовлення
+
             
     # --- ОБРОБНИКИ ДЛЯ ОФІЦІАНТА ---
     
@@ -815,7 +875,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
         session.add(order)
         await session.commit()
         
-        # --- ВАЖЛИВО: Перезавантажуємо статус для перевірки requires_kitchen_notify ---
         await session.refresh(order, ['status'])
         
         session.add(OrderStatusHistory(order_id=order.id, status_id=order.status_id, actor_info=f"Офіціант: {employee.full_name}"))
@@ -827,6 +886,5 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if admin_bot:
             await notify_new_order_to_staff(admin_bot, order, session)
 
-        # ЛОГІЧНИЙ ПЕРЕХІД: Повертаємось до списку замовлень
         await state.clear()
         await show_waiter_table_orders(callback, session, state, table_id=table_id)

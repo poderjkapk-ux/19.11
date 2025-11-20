@@ -18,9 +18,15 @@ async def get_open_shift(session: AsyncSession, employee_id: int) -> CashShift |
     )
     return result.scalars().first()
 
+async def get_any_open_shift(session: AsyncSession) -> CashShift | None:
+    """Повертає першу ліпшу відкриту зміну (для веб-адмінки)."""
+    result = await session.execute(
+        select(CashShift).where(CashShift.is_closed == False).limit(1)
+    )
+    return result.scalars().first()
+
 async def open_new_shift(session: AsyncSession, employee_id: int, start_cash: float) -> CashShift:
     """Відкриває нову касову зміну."""
-    # Перевіряємо, чи немає вже відкритої зміни
     active_shift = await get_open_shift(session, employee_id)
     if active_shift:
         raise ValueError("У цього співробітника вже є відкрита зміна.")
@@ -36,18 +42,37 @@ async def open_new_shift(session: AsyncSession, employee_id: int, start_cash: fl
     await session.refresh(new_shift)
     return new_shift
 
+async def link_order_to_shift(session: AsyncSession, order: Order, employee_id: int | None):
+    """
+    Прив'язує замовлення до відкритої зміни співробітника.
+    Якщо employee_id=None (наприклад, через адмінку), шукає будь-яку відкриту зміну.
+    """
+    if order.cash_shift_id:
+        return # Вже прив'язано
+
+    shift = None
+    if employee_id:
+        shift = await get_open_shift(session, employee_id)
+    
+    if not shift:
+        # Якщо у цього співробітника немає зміни, або це адмін через сайт,
+        # шукаємо будь-яку активну зміну, щоб гроші "впали" в касу.
+        shift = await get_any_open_shift(session)
+    
+    if shift:
+        order.cash_shift_id = shift.id
+        # session.commit() робитиме той, хто викликав цю функцію
+        logger.info(f"Замовлення #{order.id} прив'язано до зміни #{shift.id}")
+    else:
+        logger.warning(f"УВАГА: Замовлення #{order.id} оплачено, але немає відкритих змін! Гроші не будуть враховані в звіті.")
+
 async def get_shift_statistics(session: AsyncSession, shift_id: int):
-    """
-    Рахує статистику зміни (X-звіт):
-    - Продажі (готівка/картка)
-    - Внесення/Вилучення
-    - Розрахунковий залишок в касі
-    """
+    """Рахує статистику зміни (X-звіт)."""
     shift = await session.get(CashShift, shift_id)
     if not shift:
         return None
 
-    # 1. Рахуємо продажі за зміну (тільки замовлення, прив'язані до цієї зміни)
+    # 1. Продажі
     sales_query = select(
         Order.payment_method,
         func.sum(Order.total_price)
@@ -67,7 +92,7 @@ async def get_shift_statistics(session: AsyncSession, shift_id: int):
         elif method == 'card':
             total_card_sales += (amount or 0)
 
-    # 2. Рахуємо службові операції
+    # 2. Службові операції
     trans_query = select(
         CashTransaction.transaction_type,
         func.sum(CashTransaction.amount)
@@ -87,8 +112,6 @@ async def get_shift_statistics(session: AsyncSession, shift_id: int):
         elif t_type == 'out':
             service_out += (amount or 0)
 
-    # 3. Розрахунковий залишок у сейфі/касі
-    # Формула: Початок + Продажі(Готівка) + Внесення - Вилучення
     theoretical_cash = shift.start_cash + total_cash_sales + service_in - service_out
 
     return {
@@ -104,7 +127,7 @@ async def get_shift_statistics(session: AsyncSession, shift_id: int):
     }
 
 async def close_active_shift(session: AsyncSession, shift_id: int, end_cash_actual: float):
-    """Закриває зміну (Z-звіт). Фіксує підсумки в базі."""
+    """Закриває зміну (Z-звіт)."""
     shift = await session.get(CashShift, shift_id)
     if not shift or shift.is_closed:
         raise ValueError("Зміна не знайдена або вже закрита.")
@@ -114,7 +137,6 @@ async def close_active_shift(session: AsyncSession, shift_id: int, end_cash_actu
     shift.end_time = datetime.now()
     shift.end_cash_actual = end_cash_actual
     
-    # Фіксуємо фінальні цифри в історії
     shift.total_sales_cash = stats['total_sales_cash']
     shift.total_sales_card = stats['total_sales_card']
     shift.service_in = stats['service_in']
@@ -125,7 +147,7 @@ async def close_active_shift(session: AsyncSession, shift_id: int, end_cash_actu
     return shift
 
 async def add_shift_transaction(session: AsyncSession, shift_id: int, amount: float, t_type: str, comment: str):
-    """Додає службове внесення або вилучення грошей."""
+    """Додає транзакцію."""
     tx = CashTransaction(
         shift_id=shift_id,
         amount=amount,

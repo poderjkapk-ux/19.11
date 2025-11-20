@@ -16,7 +16,6 @@ from urllib.parse import quote_plus as url_quote_plus
 from models import Table, Product, Category, Order, Settings, Employee, OrderStatusHistory, OrderStatus
 from dependencies import get_db_session
 from templates import IN_HOUSE_MENU_HTML_TEMPLATE
-# --- НОВИЙ ІМПОРТ: Для розподілу на кухню/бар ---
 from notification_manager import distribute_order_to_production
 
 router = APIRouter()
@@ -63,7 +62,7 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
     categories = [{"id": c.id, "name": c.name} for c in categories_res.scalars().all()]
     products = [{"id": p.id, "name": p.name, "description": p.description, "price": p.price, "image_url": p.image_url, "category_id": p.category_id} for p in products_res.scalars().all()]
 
-    # --- НОВЕ: Отримуємо історію неоплачених замовлень для цього столика ---
+    # Отримуємо історію неоплачених замовлень для цього столика
     final_statuses_res = await session.execute(
         select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True))
     )
@@ -91,28 +90,21 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
             "time": o.created_at.strftime('%H:%M')
         })
 
-    # Передаємо дані меню та історії в шаблон через JSON
     menu_data = json.dumps({"categories": categories, "products": products})
     history_data = json.dumps(history_list) 
 
-    # --- Design variables ---
     site_title = settings.site_title or "Назва"
     
-    # Основні кольори
     primary_color_val = settings.primary_color or "#5a5a5a"
     secondary_color_val = settings.secondary_color or "#eeeeee"
     background_color_val = settings.background_color or "#f4f4f4"
-    
-    # --- НОВІ КОЛЬОРИ ---
     text_color_val = settings.text_color or "#333333"
     footer_bg_color_val = settings.footer_bg_color or "#333333"
     footer_text_color_val = settings.footer_text_color or "#ffffff"
-    # --------------------
 
     font_family_sans_val = settings.font_family_sans or "Golos Text"
     font_family_serif_val = settings.font_family_serif or "Playfair Display"
 
-    # --- НОВЕ: Соцмережі та контакти ---
     social_links = []
     if settings.instagram_url:
         social_links.append(f'<a href="{html_module.escape(settings.instagram_url)}" target="_blank"><i class="fa-brands fa-instagram"></i></a>')
@@ -120,7 +112,6 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
         social_links.append(f'<a href="{html_module.escape(settings.facebook_url)}" target="_blank"><i class="fa-brands fa-facebook"></i></a>')
     
     social_links_html = "".join(social_links)
-    # -----------------------------------
 
     return HTMLResponse(content=IN_HOUSE_MENU_HTML_TEMPLATE.format(
         table_name=html_module.escape(table.name),
@@ -136,8 +127,6 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
         primary_color_val=primary_color_val,
         secondary_color_val=secondary_color_val,
         background_color_val=background_color_val,
-        
-        # Передаємо нові змінні
         text_color_val=text_color_val,
         footer_bg_color_val=footer_bg_color_val,
         footer_text_color_val=footer_text_color_val,
@@ -147,7 +136,6 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
         font_family_sans_encoded=url_quote_plus(font_family_sans_val),
         font_family_serif_encoded=url_quote_plus(font_family_serif_val),
 
-        # Контакти підвалу
         footer_address=html_module.escape(settings.footer_address or "Адреса не вказана"),
         footer_phone=html_module.escape(settings.footer_phone or ""),
         working_hours=html_module.escape(settings.working_hours or ""),
@@ -197,7 +185,7 @@ async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_sess
         await admin_bot.session.close()
 
 @router.post("/api/menu/table/{table_id}/request_bill", response_class=JSONResponse)
-async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_session)):
+async def request_bill(table_id: int, method: str = "cash", session: AsyncSession = Depends(get_db_session)):
     """Обробляє запит на рахунок зі столика."""
     table = await session.get(Table, table_id, options=[selectinload(Table.assigned_waiters)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
@@ -215,8 +203,13 @@ async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_ses
     total_bill = sum(o.total_price for o in active_orders)
 
     waiters = table.assigned_waiters
-    message_text = (f"💰 <b>Запит на розрахунок зі столика: {html_module.escape(table.name)}</b>\n"
-                    f"Загальна сума (поточна): <b>{total_bill} грн</b>")
+    
+    # Формуємо повідомлення з урахуванням методу оплати
+    method_text = "💳 Картка" if method == 'card' else "💵 Готівка"
+    
+    message_text = (f"💰 <b>Запит на розрахунок ({method_text})</b>\n"
+                    f"Столик: {html_module.escape(table.name)}\n"
+                    f"Сума до сплати: <b>{total_bill} грн</b>")
 
     admin_chat_id_str = os.environ.get('ADMIN_CHAT_ID')
 
@@ -261,10 +254,8 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
     total_price = sum(item.get('price', 0) * item.get('quantity', 0) for item in items)
     products_str = ", ".join([f"{item['name']} x {item['quantity']}" for item in items])
 
-    # --- ОТРИМУЄМО СТАТУС ЗА ЗАМОВЧУВАННЯМ (Новий - ID 1) ---
     new_status = await session.get(OrderStatus, 1)
     if not new_status:
-        # Fallback, якщо статусу з ID 1 немає (малоймовірно)
         new_status = OrderStatus(id=1, name="Новий", requires_kitchen_notify=True)
 
     order = Order(
@@ -276,7 +267,6 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
     session.add(order)
     await session.commit()
     await session.refresh(order)
-    # Завантажуємо статус в об'єкт замовлення, щоб переконатися, що він доступний
     await session.refresh(order, ['status'])
 
     history_entry = OrderStatusHistory(
@@ -303,7 +293,6 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
 
 
     try:
-        # 1. Розсилка офіціантам (персонально для цього столика)
         waiters = table.assigned_waiters
         admin_chat_id_str = os.environ.get('ADMIN_CHAT_ID')
         admin_chat_id = None
@@ -335,8 +324,6 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
                     reply_markup=kb_admin.as_markup()
                 )
 
-        # 2. --- НОВЕ: Розподіл на Кухню та Бар (ВИПРАВЛЕНО) ---
-        # Перевіряємо, чи статус замовлення вимагає відправки на виробництво
         if order.status.requires_kitchen_notify:
             try:
                 await distribute_order_to_production(admin_bot, order, session)

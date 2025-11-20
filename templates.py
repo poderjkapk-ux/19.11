@@ -782,6 +782,1164 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 """
 
+ADMIN_EMPLOYEE_BODY = """
+<div class="card">
+    <ul class="nav-tabs">
+        <li class="nav-item"><a href="/admin/employees" class="active">Співробітники</a></li>
+        <li class="nav-item"><a href="/admin/roles">Ролі</a></li>
+    </ul>
+    <h2>👤 Додати співробітника</h2>
+    <form action="/admin/add_employee" method="post">
+        <label for="full_name">Повне ім'я:</label><input type="text" id="full_name" name="full_name" required>
+        <label for="phone_number">Номер телефону (для авторизації):</label><input type="text" id="phone_number" name="phone_number" placeholder="+380XX XXX XX XX" required>
+        <label for="role_id">Роль:</label><select id="role_id" name="role_id" required>{role_options}</select>
+        <button type="submit">Додати співробітника</button>
+    </form>
+</div>
+<div class="card">
+    <h2>👥 Список співробітників</h2>
+    <p>🟢 - На зміні (авторизований)</p>
+    <table><thead><tr><th>ID</th><th>Ім'я</th><th>Телефон</th><th>Роль</th><th>Статус</th><th>Telegram ID</th><th>Дії</th></tr></thead><tbody>
+    {rows}
+    </tbody></table>
+</div>
+"""
+ADMIN_ROLES_BODY = """
+<div class="card">
+    <ul class="nav-tabs">
+        <li class="nav-item"><a href="/admin/employees">Співробітники</a></li>
+        <li class="nav-item"><a href="/admin/roles" class="active">Ролі</a></li>
+    </ul>
+    <h2>Додати нову роль</h2>
+    <form action="/admin/add_role" method="post">
+        <label for="name">Назва ролі:</label><input type="text" id="name" name="name" required>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_manage_orders" name="can_manage_orders" value="true">
+            <label for="can_manage_orders">Може керувати замовленнями (Оператор)</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_be_assigned" name="can_be_assigned" value="true">
+            <label for="can_be_assigned">Може бути призначений на замовлення (Кур'єр)</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_serve_tables" name="can_serve_tables" value="true">
+            <label for="can_serve_tables">Може обслуговувати столики (Офіціант)</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_receive_kitchen_orders" name="can_receive_kitchen_orders" value="true">
+            <label for="can_receive_kitchen_orders">Отримує замовлення для приготування (Повар)</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_receive_bar_orders" name="can_receive_bar_orders" value="true">
+            <label for="can_receive_bar_orders">Отримує замовлення для бару (Бармен)</label> 
+        </div>
+        <button type="submit">Додати роль</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Список ролей</h2>
+    <table><thead><tr><th>ID</th><th>Назва</th><th>Керув. замовл.</th><th>Признач. доставку</th><th>Обслуг. столики</th><th>Кухня</th><th>Бар</th><th>Дії</th></tr></thead><tbody>
+    {rows}
+    </tbody></table>
+</div>
+"""
+ADMIN_REPORTS_BODY = """
+<div class="card">
+    <h2>Фільтр звіту</h2>
+    <form action="/admin/reports/couriers" method="get" class="search-form">
+        <label for="date_from">Дата з:</label>
+        <input type="date" id="date_from" name="date_from" value="{date_from}">
+        <label for="date_to">Дата по:</label>
+        <input type="date" id="date_to" name="date_to" value="{date_to}">
+        <button type="submit">Сформувати звіт</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Результати звіту за період з {date_from_formatted} по {date_to_formatted}</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Ім'я кур'єра</th>
+                <th>Кількість виконаних замовлень</th>
+            </tr>
+        </thead>
+        <tbody>
+            {report_rows}
+        </tbody>
+    </table>
+</div>
+"""
+
+ADMIN_SETTINGS_BODY = """
+<div class="card">
+    <form action="/admin/settings" method="post" enctype="multipart/form-data">
+        <h2>⚙️ Основні налаштування</h2>
+        
+        <h3>Зовнішній вигляд</h3>
+        <label>Логотип (завантажте новий, щоб замінити):</label>
+        <input type="file" name="logo_file" accept="image/*">
+        {current_logo_html}
+
+        <h3 style="margin-top: 2rem;">Налаштування Favicon</h3>
+        <p>Завантажте необхідні файли favicon. Після завантаження оновіть сторінку (Ctrl+F5), щоб побачити зміни.</p>
+        <h4>Поточні іконки</h4>
+        <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-bottom: 2rem; background: #f0f0f0; padding: 1rem; border-radius: 8px;">
+            <div><img src="/static/favicons/favicon-16x16.png?v={cache_buster}" alt="16x16" style="border: 1px solid #ccc;"><br><small>16x16</small></div>
+            <div><img src="/static/favicons/favicon-32x32.png?v={cache_buster}" alt="32x32" style="border: 1px solid #ccc;"><br><small>32x32</small></div>
+            <div><img src="/static/favicons/apple-touch-icon.png?v={cache_buster}" alt="Apple Touch Icon" style="width: 60px; height: 60px; border: 1px solid #ccc;"><br><small>Apple Icon</small></div>
+        </div>
+
+        <h4>Завантажити нові іконки</h4>
+        <div class="form-grid" style="grid-template-columns: 1fr;">
+            <div class="form-group"><label for="apple_touch_icon">apple-touch-icon.png (180x180)</label><input type="file" id="apple_touch_icon" name="apple_touch_icon" accept="image/png"></div>
+            <div class="form-group"><label for="favicon_32x32">favicon-32x32.png</label><input type="file" id="favicon_32x32" name="favicon_32x32" accept="image/png"></div>
+            <div class="form-group"><label for="favicon_16x16">favicon-16x16.png</label><input type="file" id="favicon_16x16" name="favicon_16x16" accept="image/png"></div>
+            <div class="form-group"><label for="favicon_ico">favicon.ico (всі розміри)</label><input type="file" id="favicon_ico" name="favicon_ico" accept="image/x-icon"></div>
+            <div class="form-group"><label for="site_webmanifest">site.webmanifest</label><input type="file" id="site_webmanifest" name="site_webmanifest" accept="application/manifest+json"></div>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+            <button type="submit">Зберегти всі налаштування</button>
+        </div>
+    </form>
+</div>
+"""
+
+
+ADMIN_MENU_BODY = """
+<div class="card">
+    <h2>{form_title}</h2>
+    <form action="{form_action}" method="post">
+        <label for="title">Заголовок (текст на кнопці):</label>
+        <input type="text" id="title" name="title" value="{item_title}" required>
+        
+        <label for="content">Зміст сторінки (можна використовувати HTML-теги):</label>
+        <textarea id="content" name="content" rows="10" required>{item_content}</textarea>
+        
+        <label for="sort_order">Порядок сортування (менше = вище):</label>
+        <input type="number" id="sort_order" name="sort_order" value="{item_sort_order}" required>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="show_on_website" name="show_on_website" value="true" {item_show_on_website_checked}>
+            <label for="show_on_website">Показувати на сайті</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="show_in_telegram" name="show_in_telegram" value="true" {item_show_in_telegram_checked}>
+            <label for="show_in_telegram">Показувати в Telegram-боті</label>
+        </div>
+        
+        <button type="submit">{button_text}</button>
+        <a href="/admin/menu" class="button secondary">Скасувати</a>
+    </form>
+</div>
+<div class="card">
+    <h2>📜 Список сторінок</h2>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Заголовок</th>
+                    <th>Сортування</th>
+                    <th>На сайті</th>
+                    <th>В Telegram</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+</div>
+"""
+
+ADMIN_ORDER_MANAGE_BODY = """
+<style>
+    .manage-grid {{
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 2rem;
+    }}
+    .order-details-card .detail-item {{
+        display: flex;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-light);
+    }}
+    .order-details-card .detail-item:last-child {{
+        border-bottom: none;
+    }}
+    .order-details-card .detail-item strong {{
+        color: #6b7280;
+    }}
+    body.dark-mode .order-details-card .detail-item strong {{
+        color: #9ca3af;
+    }}
+    .status-history {{
+        list-style-type: none;
+        padding-left: 1rem;
+        border-left: 2px solid var(--border-light);
+    }}
+    .status-history li {{
+        margin-bottom: 0.75rem;
+        position: relative;
+        font-size: 0.9rem;
+    }}
+    .status-history li::before {{
+        content: '✓';
+        position: absolute;
+        left: -1.1rem;
+        top: 2px;
+        color: var(--primary-color);
+        font-weight: 900;
+    }}
+    @media (max-width: 992px) {{
+        .manage-grid {{
+            grid-template-columns: 1fr;
+        }}
+    }}
+</style>
+<div class="manage-grid">
+    <div class="left-column">
+        <div class="card order-details-card">
+            <h2>Деталі замовлення #{order_id}</h2>
+            <div class="detail-item">
+                <strong>Клієнт:</strong>
+                <span>{customer_name}</span>
+            </div>
+            <div class="detail-item">
+                <strong>Телефон:</strong>
+                <span>{phone_number}</span>
+            </div>
+            <div class="detail-item">
+                <strong>Адреса:</strong>
+                <span>{address}</span>
+            </div>
+             <div class="detail-item">
+                <strong>Сума:</strong>
+                <span>{total_price} грн</span>
+            </div>
+            <div class="detail-item">
+                <strong>Оплата:</strong>
+                <span>{payment_method_text}</span>
+            </div>
+            <div class="detail-item" style="flex-direction: column; align-items: start;">
+                <strong style="margin-bottom: 0.5rem;">Склад замовлення:</strong>
+                <div>{products_html}</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Історія статусів</h2>
+            {history_html}
+        </div>
+    </div>
+    <div class="right-column">
+        <div class="card">
+            <h2>Керування статусом</h2>
+            <form action="/admin/order/manage/{order_id}/set_status" method="post">
+                <label for="status_id">Новий статус:</label>
+                <select name="status_id" id="status_id" required>
+                    {status_options}
+                </select>
+                
+                <label for="payment_method" style="margin-top:10px;">Метод оплати (для каси):</label>
+                <select name="payment_method" id="payment_method">
+                    <option value="cash" {sel_cash}>💵 Готівка</option>
+                    <option value="card" {sel_card}>💳 Картка / Термінал</option>
+                </select>
+
+                <button type="submit" style="margin-top:15px;">Зберегти зміни</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Призначення кур'єра</h2>
+            <form action="/admin/order/manage/{order_id}/assign_courier" method="post">
+                <label for="courier_id">Кур'єр (на зміні):</label>
+                <select name="courier_id" id="courier_id" required>
+                    {courier_options}
+                </select>
+                <button type="submit">Призначити кур'єра</button>
+            </form>
+        </div>
+    </div>
+</div>
+"""
+
+
+ADMIN_CLIENTS_LIST_BODY = """
+<div class="card">
+    <h2><i class="fa-solid fa-users-line"></i> Список клієнтів</h2>
+    <form action="/admin/clients" method="get" class="search-form">
+        <input type="text" name="search" placeholder="Пошук за іменем або телефоном..." value="{search_query}">
+        <button type="submit">🔍 Знайти</button>
+    </form>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ім'я</th>
+                    <th>Телефон</th>
+                    <th>Всього замовлень</th>
+                    <th>Загальна сума</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+    {pagination}
+</div>
+"""
+
+ADMIN_CLIENT_DETAIL_BODY = """
+<style>
+    .client-info-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }}
+    .info-block {{
+        background-color: var(--bg-light);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border-light);
+    }}
+    .info-block h4 {{
+        font-size: 0.9rem;
+        color: #6b7280;
+        text-transform: uppercase;
+        margin-bottom: 0.5rem;
+    }}
+    .info-block p {{
+        font-size: 1.1rem;
+        font-weight: 600;
+    }}
+    .order-summary-row {{
+        cursor: pointer;
+    }}
+    .order-summary-row:hover {{
+        background-color: #f3f4f6;
+    }}
+    body.dark-mode .order-summary-row:hover {{
+        background-color: #374151;
+    }}
+    .order-details-row {{
+        display: none;
+    }}
+    .details-content {{
+        padding: 1.5rem;
+        background-color: var(--bg-light);
+    }}
+    .status-history {{
+        list-style-type: none;
+        padding-left: 1rem;
+        border-left: 2px solid var(--border-light);
+    }}
+    .status-history li {{
+        margin-bottom: 0.5rem;
+        position: relative;
+    }}
+    .status-history li::before {{
+        content: '✓';
+        position: absolute;
+        left: -1.1rem;
+        top: 2px;
+        color: var(--primary-color);
+        font-weight: 900;
+    }}
+</style>
+<div class="card">
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem;">
+        <i class="fa-solid fa-user-circle" style="font-size: 3rem;"></i>
+        <div>
+            <h2 style="margin-bottom: 0;">{client_name}</h2>
+            <a href="tel:{phone_number}">{phone_number}</a>
+        </div>
+    </div>
+    <div class="client-info-grid">
+        <div class="info-block">
+            <h4>Остання адреса</h4>
+            <p>{address}</p>
+        </div>
+        <div class="info-block">
+            <h4>Всього замовлень</h4>
+            <p>{total_orders}</p>
+        </div>
+        <div class="info-block">
+            <h4>Загальна сума</h4>
+            <p>{total_spent} грн</p>
+        </div>
+    </div>
+</div>
+<div class="card">
+    <h3>Історія замовлень</h3>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Дата</th>
+                    <th>Статус</th>
+                    <th>Сума</th>
+                    <th>Доставив</th>
+                    <th>Деталі</th>
+                </tr>
+            </thead>
+            <tbody>
+                {order_rows}
+            </tbody>
+        </table>
+    </div>
+</div>
+<script>
+    function toggleDetails(row) {{
+        const detailsRow = row.nextElementSibling;
+        const icon = row.querySelector('i');
+        if (detailsRow.style.display === 'table-row') {{
+            detailsRow.style.display = 'none';
+            icon.classList.remove('fa-chevron-up');
+            icon.classList.add('fa-chevron-down');
+        }} else {{
+            detailsRow.style.display = 'table-row';
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+        }}
+    }}
+</script>
+"""
+
+IN_HOUSE_MENU_HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{site_title} - {table_name}</title>
+    <meta name="description" content="{seo_description}">
+    <meta name="keywords" content="{seo_keywords}">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
+    <link rel="manifest" href="/static/favicons/site.webmanifest">
+    <link rel="shortcut icon" href="/static/favicons/favicon.ico">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family={font_family_serif_encoded}:wght@400;700&family={font_family_sans_encoded}:wght@400;600&display=swap" rel="stylesheet">
+    
+    <style>
+      :root {{
+        --primary-color: {primary_color_val};
+        --secondary-color: {secondary_color_val};
+        --background-color: {background_color_val};
+        --text-color: {text_color_val};
+        --footer-bg-color: {footer_bg_color_val};
+        --footer-text-color: {footer_text_color_val};
+        
+        --primary-hover-color: color-mix(in srgb, {primary_color_val}, black 10%);
+        --primary-glow-color: {primary_color_val}26;
+      }}
+      
+      body, .category-nav a, .add-to-cart-btn, .action-btn, #checkout-form, .radio-group label {{
+        font-family: '{font_family_sans_val}', sans-serif;
+      }}
+      header h1, .category-title, .product-name, .product-price, .cart-header h2, .modal-content h2 {{
+        font-family: '{font_family_serif_val}', serif;
+      }}
+    </style>
+    <style>
+        :root {{
+            --bg-color: var(--background-color, #f4f4f4);
+            --card-bg: #ffffff;
+            --border-color: var(--secondary-color, #dddddd);
+            --dark-text-for-accent: #ffffff;
+            --side-padding: 20px;
+        }}
+        @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+        @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
+        @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
+        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+        html {{ scroll-behavior: smooth; overflow-y: scroll; }}
+        body {{
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color); 
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }}
+        .container {{ width: 100%; margin: 0 auto; padding: 0; }}
+        header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
+        .header-logo-container {{ display: inline-block; margin-bottom: 25px; }}
+        .header-logo {{ height: 100px; width: auto; }}
+        header h1 {{
+            font-size: clamp(2.5em, 5vw, 3.5em);
+            color: var(--text-color); margin: 0; font-weight: 700;
+        }}
+        header p {{
+            font-size: clamp(1em, 2vw, 1.2em);
+            color: #888; margin-top: 10px; letter-spacing: 4px; text-transform: uppercase;
+        }}
+        .table-name-header {{
+            font-size: clamp(1.2em, 2.5vw, 1.5em);
+            color: var(--primary-color); margin-top: 20px;
+        }}
+
+        .category-nav {{
+            display: flex; position: sticky; top: -1px;
+            background-color: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px);
+            z-index: 100; animation: fadeIn 0.5s ease-out; overflow-x: auto;
+            white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            width: 100%; padding: 15px 0;
+        }}
+        .category-nav::-webkit-scrollbar {{ display: none; }}
+        .category-nav a {{
+            color: var(--text-color); text-decoration: none; padding: 10px 25px;
+            border: 1px solid var(--border-color); border-radius: 20px;
+            transition: all 0.3s ease; font-weight: 500; flex-shrink: 0; margin: 0 10px;
+        }}
+        .category-nav a:first-child {{ margin-left: var(--side-padding); }}
+        .category-nav a:last-child {{ margin-right: var(--side-padding); }}
+        .category-nav a:hover, .category-nav a.active {{
+            background-color: var(--primary-color); color: var(--dark-text-for-accent);
+            border-color: var(--primary-color); transform: scale(1.05); font-weight: 600;
+            box-shadow: 0 0 15px var(--primary-glow-color);
+        }}
+        
+        #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); margin-bottom: 40px; }}
+        .category-section {{ margin-bottom: 30px; padding-top: 90px; margin-top: -90px; }}
+        .category-title {{
+            font-size: clamp(2.2em, 4vw, 2.8em);
+            color: var(--primary-color); padding-bottom: 15px; margin-bottom: 40px;
+            text-align: center; border-bottom: 1px solid var(--border-color); position: relative;
+        }}
+        .category-title::after {{
+            content: ''; position: absolute; bottom: -1px; left: 50%;
+            transform: translateX(-50%); width: 100px; height: 2px;
+            background-color: var(--primary-color); box-shadow: 0 0 10px var(--primary-glow-color);
+        }}
+        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }}
+        .product-card {{
+            background-color: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
+            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            animation: fadeIn 0.5s ease-out forwards; opacity: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }}
+        .product-card:hover {{
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.1), 0 0 20px var(--primary-glow-color);
+            border-color: var(--primary-color);
+        }}
+        .product-image-wrapper {{ width: 100%; height: 220px; position: relative; overflow: hidden; }}
+        .product-image {{ width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }}
+        .product-card:hover .product-image {{ transform: scale(1.1); }}
+        .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
+        .product-name {{ font-size: 1.7em; margin: 0 0 10px; color: #333; }}
+        .product-desc {{ font-size: 0.9em; color: #777; margin: 0 0 20px; flex-grow: 1; line-height: 1.6; }}
+        .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
+        .product-price {{ font-size: 1.8em; color: var(--primary-color); }}
+        .add-to-cart-btn {{
+            background: var(--primary-color); color: var(--dark-text-for-accent);
+            border: none; padding: 12px 22px; border-radius: 5px; cursor: pointer;
+            font-weight: 600; font-size: 0.9em; transition: all 0.3s ease;
+        }}
+        .add-to-cart-btn.added {{ background-color: #28a745; color: white; }}
+        .add-to-cart-btn:hover {{
+            background-color: var(--primary-hover-color); transform: scale(1.05);
+            box-shadow: 0 0 15px var(--primary-glow-color);
+        }}
+        
+        #cart-sidebar, #history-sidebar {{
+            position: fixed; top: 0; right: -100%; width: 100%; max-width: 420px; height: 100%;
+            background-color: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px);
+            border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.1);
+            transition: all 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000;
+            color: #333;
+        }}
+        #history-sidebar {{ left: -100%; right: auto; border-left: none; border-right: 1px solid var(--border-color); box-shadow: 5px 0 25px rgba(0,0,0,0.1); }}
+
+        #cart-sidebar.open {{ right: 0; }}
+        #history-sidebar.open {{ left: 0; }}
+
+        .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
+        .cart-header h2 {{ margin: 0; color: var(--primary-color); }}
+        #close-cart-btn, #close-history-btn {{ background: none; border: none; color: #333; font-size: 2.5em; cursor: pointer; line-height: 1; transition: transform 0.2s ease, color 0.2s ease;}}
+        #close-cart-btn:hover, #close-history-btn:hover {{ color: var(--primary-color); transform: rotate(90deg); }}
+        
+        .cart-items {{ flex-grow: 1; overflow-y: auto; padding: 20px; }}
+        .cart-item {{ animation: popIn 0.3s ease-out; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }}
+        .cart-item-info {{ flex-grow: 1; }} .cart-item-name {{ font-weight: 600; }}
+        .cart-item-price {{ color: #555; font-size: 0.9em; }}
+        .cart-item-controls {{ display: flex; align-items: center; }}
+        .cart-item-controls button {{ background: var(--secondary-color, #eee); border: 1px solid var(--border-color); color: #333; width: 28px; height: 28px; cursor: pointer; border-radius: 50%; }}
+        .cart-item-controls span {{ margin: 0 10px; }}
+        .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); background-color: rgba(255, 255, 255, 0.8); }}
+        .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
+        
+        .action-buttons {{ padding: 0 20px 20px; display: flex; flex-direction: column; gap: 10px; }}
+        .action-btn, #place-order-btn {{
+            width: 100%; padding: 15px; font-size: 1.1em; cursor: pointer; border-radius: 5px;
+            font-weight: 700; border: 1px solid var(--primary-color); display: flex;
+            align-items: center; justify-content: center; gap: 10px;
+            transition: all 0.3s ease;
+        }}
+        .action-btn svg, #place-order-btn svg {{ width: 20px; height: 20px; }}
+        #place-order-btn {{ background-color: var(--primary-color); color: var(--dark-text-for-accent); border-color: var(--primary-color); }}
+        #place-order-btn:hover:not(:disabled) {{ background-color: var(--primary-hover-color); box-shadow: 0 0 15px var(--primary-glow-color); }}
+        #place-order-btn:disabled {{ background-color: #aaa; color: #eee; cursor: not-allowed; border-color: #aaa; }}
+        .call-waiter-btn, .request-bill-btn {{ background-color: transparent; color: var(--primary-color); }}
+        .call-waiter-btn:hover, .request-bill-btn:hover {{ background-color: var(--secondary-color, #f4f4f4); }}
+
+        /* Floating Buttons */
+        #cart-toggle {{
+            position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color);
+            color: var(--dark-text-for-accent); border: none; border-radius: 50%;
+            width: 60px; height: 60px; cursor: pointer; z-index: 1001;
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s ease;
+        }}
+        #history-toggle {{
+            position: fixed; bottom: 20px; left: 20px; background-color: #fff;
+            color: var(--primary-color); border: 1px solid var(--primary-color); border-radius: 50%;
+            width: 60px; height: 60px; cursor: pointer; z-index: 1001;
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: all 0.3s ease;
+        }}
+        
+        #cart-toggle.popping {{ animation: cartPop 0.4s ease; }}
+        #cart-toggle svg, #history-toggle svg {{ width: 28px; height: 28px; }}
+        #cart-toggle:hover {{ transform: scale(1.1); background-color: var(--primary-hover-color); }}
+        #history-toggle:hover {{ transform: scale(1.1); background-color: #f9f9f9; }}
+        
+        #cart-count {{
+            position: absolute; top: -5px; right: -5px; background: var(--primary-color);
+            color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px;
+            font-size: 0.8em; display: flex; justify-content: center; align-items: center;
+            font-weight: 700; border: 2px solid var(--card-bg);
+        }}
+        
+        /* Styles for History Items */
+        .history-item {{
+            padding: 15px; border: 1px solid var(--border-color); border-radius: 8px;
+            margin-bottom: 15px; background-color: rgba(0,0,0,0.02);
+        }}
+        .history-header {{ display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em; color: #777; }}
+        .history-products {{ font-weight: 500; margin-bottom: 10px; line-height: 1.4; }}
+        .history-footer {{ display: flex; justify-content: space-between; font-weight: 700; color: var(--primary-color); }}
+        .grand-total-section {{
+            margin-top: 20px; padding-top: 15px; border-top: 2px dashed var(--border-color);
+            font-size: 1.1em;
+        }}
+        .total-row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
+        .total-row.final {{ font-size: 1.3em; font-weight: 800; color: var(--primary-color); margin-top: 10px; }}
+
+        .toast {{
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+            background-color: #333; color: #fff; padding: 15px 25px; border-radius: 8px;
+            z-index: 3000; opacity: 0; transition: opacity 0.5s, transform 0.5s;
+            pointer-events: none; border: 1px solid var(--primary-color);
+            box-shadow: 0 0 20px var(--primary-glow-color);
+        }}
+        .toast.show {{ opacity: 1; transform: translateX(-50%) translateY(-20px); }}
+        .btn-spinner {{
+            display: none; border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid var(--dark-text-for-accent);
+            border-radius: 50%; width: 18px; height: 18px;
+            animation: spin 0.8s linear infinite;
+        }}
+        button.working .btn-spinner {{ display: inline-block; }}
+        button.working span {{ vertical-align: middle; }}
+        #loader {{ display: flex; justify-content: center; align-items: center; height: 80vh; }}
+        .spinner {{ border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }}
+        
+        /* --- NEW Footer Styles --- */
+        footer {{
+            background-color: var(--footer-bg-color);
+            color: var(--footer-text-color);
+            padding: 50px var(--side-padding) 30px;
+            margin-top: auto;
+            border-top: 1px solid var(--border-color);
+        }}
+        .footer-content {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+        .footer-section h4 {{
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            font-weight: 700;
+            position: relative;
+            padding-bottom: 10px;
+            color: var(--footer-text-color);
+        }}
+        .footer-section h4::after {{
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 50px;
+            height: 2px;
+            background-color: var(--primary-color);
+        }}
+        .footer-contact-item {{
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }}
+        .footer-contact-item i {{
+            margin-right: 12px;
+            color: var(--primary-color);
+            margin-top: 4px;
+            font-size: 1.1em;
+        }}
+        .footer-contact-item a {{
+            color: var(--footer-text-color);
+            text-decoration: none;
+            transition: color 0.2s;
+        }}
+        .footer-contact-item a:hover {{
+            color: var(--primary-color);
+        }}
+        .footer-social {{
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+        }}
+        .footer-social a {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            color: var(--footer-text-color);
+            font-size: 1.2em;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }}
+        .footer-social a:hover {{
+            background-color: var(--primary-color);
+            color: var(--dark-text-for-accent);
+            transform: translateY(-3px);
+        }}
+        .footer-bottom {{
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.85em;
+            opacity: 0.8;
+        }}
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-logo-container">
+            {logo_html}
+        </div>
+        <h1>{site_title}</h1> <h2 class="table-name-header">{table_name}</h2>
+    </header>
+    <div class="container">
+        <nav id="category-nav" class="category-nav"></nav>
+        <main id="menu">
+            <div id="loader"><div class="spinner"></div></div>
+        </main>
+    </div>
+    <div style="height: 100px;"></div>
+    
+    <button id="history-toggle" title="Історія та Рахунок">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+    </button>
+
+    <button id="cart-toggle">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 11-3 0 1.5 1.5 0 003 0z"></path></svg>
+        <span id="cart-count">0</span>
+    </button>
+
+    <aside id="history-sidebar">
+        <div class="cart-header">
+            <h2>Ваш рахунок</h2>
+            <button id="close-history-btn">&times;</button>
+        </div>
+        <div class="cart-items">
+            <div id="history-list"></div>
+            
+            <div class="grand-total-section">
+                <div class="total-row">
+                    <span>Замовлені страви:</span>
+                    <span><b id="history-total">{grand_total}</b> грн</span>
+                </div>
+                <div class="total-row" style="color: #777;">
+                    <span>Поточний кошик:</span>
+                    <span id="cart-pending-total">0 грн</span>
+                </div>
+                <div class="total-row final">
+                    <span>Разом до сплати:</span>
+                    <span id="grand-total-display">{grand_total} грн</span>
+                </div>
+            </div>
+        </div>
+        <div class="action-buttons">
+             <button class="action-btn request-bill-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3.375m-3.375 2.25h10.5m4.5 0a4.5 4.5 0 00-4.5-4.5h-2.25a4.5 4.5 0 00-4.5 4.5v2.25a4.5 4.5 0 004.5 4.5h2.25a4.5 4.5 0 004.5-4.5v-2.25z" /></svg>
+                <div class="btn-spinner"></div>
+                <span>Попросити рахунок</span>
+            </button>
+        </div>
+    </aside>
+
+    <aside id="cart-sidebar">
+        <div class="cart-header">
+            <h2>Ваше замовлення</h2>
+            <button id="close-cart-btn">&times;</button>
+        </div>
+        <div id="cart-items-container" class="cart-items"></div>
+        <div class="cart-footer">
+            <div class="cart-total">
+                <span>Всього:</span>
+                <span id="cart-total-price">0 грн</span>
+            </div>
+            <button id="place-order-btn" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <div class="btn-spinner"></div>
+                <span>Замовити</span>
+            </button>
+        </div>
+        <div class="action-buttons">
+            <button class="action-btn call-waiter-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
+                <div class="btn-spinner"></div>
+                <span>Викликати офіціанта</span>
+            </button>
+        </div>
+    </aside>
+    <div id="toast" class="toast"></div>
+    
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Контакти</h4>
+                <div class="footer-contact-item">
+                    <i class="fa-solid fa-location-dot"></i>
+                    <span>{footer_address}</span>
+                </div>
+                <div class="footer-contact-item">
+                    <i class="fa-solid fa-phone"></i>
+                    <a href="tel:{footer_phone}">{footer_phone}</a>
+                </div>
+                 <div class="footer-contact-item">
+                    <i class="fa-solid fa-clock"></i>
+                    <span>{working_hours}</span>
+                </div>
+            </div>
+            <div class="footer-section">
+                <h4>Ми в соцмережах</h4>
+                <div class="footer-social">
+                    {social_links_html}
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 {site_title}. Всі права захищені.</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {{
+            const TABLE_ID = {table_id};
+            let cart = {{}};
+            const menuData = {menu_data};
+            
+            // --- NEW: Data from backend ---
+            const historyData = {history_data};
+            const initialGrandTotal = {grand_total};
+
+            const menuContainer = document.getElementById('menu');
+            const categoryNav = document.getElementById('category-nav');
+            const cartSidebar = document.getElementById('cart-sidebar');
+            const historySidebar = document.getElementById('history-sidebar'); // New sidebar
+            const cartToggle = document.getElementById('cart-toggle');
+            const historyToggle = document.getElementById('history-toggle'); // New toggle
+            const closeCartBtn = document.getElementById('close-cart-btn');
+            const closeHistoryBtn = document.getElementById('close-history-btn'); // New close
+            const cartItemsContainer = document.getElementById('cart-items-container');
+            const cartTotalPriceEl = document.getElementById('cart-total-price');
+            const cartCountEl = document.getElementById('cart-count');
+            const placeOrderBtn = document.getElementById('place-order-btn');
+            const toastEl = document.getElementById('toast');
+            const loader = document.getElementById('loader');
+            
+            // --- Elements for Bill Summary ---
+            const historyListEl = document.getElementById('history-list');
+            const cartPendingTotalEl = document.getElementById('cart-pending-total');
+            const grandTotalDisplayEl = document.getElementById('grand-total-display');
+            
+            const showToast = (message) => {{
+                toastEl.textContent = message;
+                toastEl.classList.add('show');
+                setTimeout(() => {{
+                    toastEl.classList.remove('show');
+                }}, 4000);
+            }};
+            
+            // --- Render History ---
+            const renderHistory = () => {{
+                historyListEl.innerHTML = '';
+                if (historyData.length === 0) {{
+                    historyListEl.innerHTML = '<p style="text-align:center; color:#888;">Історія замовлень порожня.</p>';
+                    return;
+                }}
+                
+                historyData.forEach(order => {{
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    // Format products list properly
+                    const productsHtml = order.products.replace(/, /g, '<br>');
+                    
+                    item.innerHTML = `
+                        <div class="history-header">
+                            <span>#${{order.id}} • ${{order.time}}</span>
+                            <span>${{order.status}}</span>
+                        </div>
+                        <div class="history-products">${{productsHtml}}</div>
+                        <div class="history-footer">
+                            <span>Сума:</span>
+                            <span>${{order.total_price}} грн</span>
+                        </div>
+                    `;
+                    historyListEl.appendChild(item);
+                }});
+            }};
+
+            const updateCartView = () => {{
+                cartItemsContainer.innerHTML = '';
+                let totalPrice = 0;
+                let totalCount = 0;
+                const items = Object.values(cart);
+                if (items.length > 0) {{
+                    items.forEach(item => {{
+                        totalPrice += item.price * item.quantity;
+                        totalCount += item.quantity;
+                        const cartItem = document.createElement('div');
+                        cartItem.className = 'cart-item';
+                        cartItem.innerHTML = `
+                            <div class="cart-item-info">
+                                <div class="cart-item-name">${{item.name}}</div>
+                                <div class="cart-item-price">${{item.quantity}} x ${{item.price}} грн</div>
+                            </div>
+                            <div class="cart-item-controls">
+                                <button data-id="${{item.id}}" class="change-quantity">-</button>
+                                <span>${{item.quantity}}</span>
+                                <button data-id="${{item.id}}" class="change-quantity">+</button>
+                            </div>`;
+                        cartItemsContainer.appendChild(cartItem);
+                    }});
+                    placeOrderBtn.disabled = false;
+                }} else {{
+                    cartItemsContainer.innerHTML = '<p style="text-align:center; color:#888;">Ваш кошик порожній</p>';
+                    placeOrderBtn.disabled = true;
+                }}
+                
+                // Update Cart Totals
+                cartTotalPriceEl.textContent = `${{totalPrice.toFixed(2)}} грн`;
+                cartCountEl.textContent = totalCount;
+                cartCountEl.style.display = totalCount > 0 ? 'flex' : 'none';
+                
+                // Update Bill Summary (History Sidebar)
+                cartPendingTotalEl.textContent = `${{totalPrice}} грн`;
+                const finalTotal = initialGrandTotal + totalPrice;
+                grandTotalDisplayEl.textContent = `${{finalTotal}} грн`;
+            }};
+
+            const renderMenu = (data) => {{
+                menuContainer.innerHTML = '';
+                categoryNav.innerHTML = '';
+                loader.style.display = 'none';
+                data.categories.forEach((category, index) => {{
+                    const navLink = document.createElement('a');
+                    navLink.href = `#category-${{category.id}}`;
+                    navLink.textContent = category.name;
+                    if (index === 0) navLink.classList.add('active');
+                    categoryNav.appendChild(navLink);
+
+                    const categorySection = document.createElement('section');
+                    categorySection.className = 'category-section';
+                    categorySection.id = `category-${{category.id}}`;
+                    categorySection.innerHTML = `<h2 class="category-title">${{category.name}}</h2>`;
+                    
+                    const productsGrid = document.createElement('div');
+                    productsGrid.className = 'products-grid';
+                    const products = data.products.filter(p => p.category_id === category.id);
+                    products.forEach((product, pIndex) => {{
+                        const productCard = document.createElement('div');
+                        productCard.className = 'product-card';
+                        productCard.style.animationDelay = `${{pIndex * 0.05}}s`;
+                        productCard.innerHTML = `
+                            <div class="product-image-wrapper">
+                                <img src="/${{product.image_url || 'static/images/placeholder.jpg'}}" alt="${{product.name}}" class="product-image">
+                            </div>
+                            <div class="product-info">
+                                <h3 class="product-name">${{product.name}}</h3>
+                                <p class="product-desc">${{product.description || ''}}</p>
+                                <div class="product-footer">
+                                    <span class="product-price">${{product.price}} грн</span>
+                                    <button class="add-to-cart-btn" data-id="${{product.id}}" data-name="${{product.name}}" data-price="${{product.price}}">Додати</button>
+                                </div>
+                            </div>`;
+                        productsGrid.appendChild(productCard);
+                    }});
+                    categorySection.appendChild(productsGrid);
+                    menuContainer.appendChild(categorySection);
+                }});
+                setupScrollspy();
+            }};
+
+            const setupScrollspy = () => {{
+                const navLinks = categoryNav.querySelectorAll('a');
+                const sections = document.querySelectorAll('.category-section');
+                const observer = new IntersectionObserver((entries) => {{
+                    entries.forEach(entry => {{
+                        if (entry.isIntersecting) {{
+                            const id = entry.target.getAttribute('id');
+                            const activeLink = document.querySelector(`.category-nav a[href="#${{id}}"]`);
+                            navLinks.forEach(link => link.classList.remove('active'));
+                            activeLink.classList.add('active');
+                            activeLink.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'center' }});
+                        }}
+                    }});
+                }}, {{ root: null, rootMargin: '-40% 0px -60% 0px', threshold: 0 }});
+                sections.forEach(section => observer.observe(section));
+            }};
+            
+            menuContainer.addEventListener('click', e => {{
+                if (e.target.classList.contains('add-to-cart-btn')) {{
+                    const button = e.target;
+                    const id = button.dataset.id;
+                    if (cart[id]) {{
+                        cart[id].quantity++;
+                    }} else {{
+                        cart[id] = {{ id: id, name: button.dataset.name, price: parseInt(button.dataset.price), quantity: 1 }};
+                    }}
+                    updateCartView();
+                    cartToggle.classList.add('popping');
+                    setTimeout(() => cartToggle.classList.remove('popping'), 400);
+                    button.textContent = '✓ Додано';
+                    button.classList.add('added');
+                    setTimeout(() => {{
+                        button.textContent = 'Додати';
+                        button.classList.remove('added');
+                    }}, 1500);
+                }}
+            }});
+
+            cartItemsContainer.addEventListener('click', e => {{
+                const target = e.target;
+                const id = target.dataset.id;
+                if (!id || !target.classList.contains('change-quantity')) return;
+                
+                if (target.textContent === '+') {{
+                    cart[id].quantity++;
+                }} else {{
+                    cart[id].quantity--;
+                    if (cart[id].quantity === 0) delete cart[id];
+                }}
+                updateCartView();
+            }});
+            
+            cartToggle.addEventListener('click', () => {{
+                cartSidebar.classList.add('open');
+                historySidebar.classList.remove('open');
+            }});
+            
+            historyToggle.addEventListener('click', () => {{
+                historySidebar.classList.add('open');
+                cartSidebar.classList.remove('open');
+            }});
+            
+            closeCartBtn.addEventListener('click', () => cartSidebar.classList.remove('open'));
+            closeHistoryBtn.addEventListener('click', () => historySidebar.classList.remove('open'));
+
+            const handleApiButtonClick = async (button, apiUrl) => {{
+                button.disabled = true;
+                button.classList.add('working');
+                try {{
+                    const response = await fetch(apiUrl, {{ method: 'POST' }});
+                    const result = await response.json();
+                    showToast(result.message);
+                }} catch (error) {{
+                    showToast('Сталася помилка. Спробуйте ще раз.');
+                }} finally {{
+                    button.disabled = false;
+                    button.classList.remove('working');
+                }}
+            }};
+
+            document.querySelector('.call-waiter-btn').addEventListener('click', (e) => {{
+                handleApiButtonClick(e.currentTarget, `/api/menu/table/${{TABLE_ID}}/call_waiter`);
+            }});
+            
+            document.querySelector('.request-bill-btn').addEventListener('click', (e) => {{
+                const button = e.currentTarget;
+                if (confirm("Бажаєте оплатити карткою? (ОК - Картка, Скасувати - Готівка)")) {{
+                     handleApiButtonClick(button, `/api/menu/table/${{TABLE_ID}}/request_bill?method=card`);
+                }} else {{
+                     handleApiButtonClick(button, `/api/menu/table/${{TABLE_ID}}/request_bill?method=cash`);
+                }}
+            }});
+
+            placeOrderBtn.addEventListener('click', async (e) => {{
+                const button = e.currentTarget;
+                const items = Object.values(cart);
+                if (items.length === 0) return;
+                
+                button.disabled = true;
+                button.classList.add('working');
+
+                try {{
+                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/place_order`, {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(items)
+                    }});
+                    const result = await response.json();
+                    showToast(result.message);
+                    if (response.ok) {{
+                        cart = {{}};
+                        setTimeout(() => window.location.reload(), 1500);
+                    }}
+                }} catch (error) {{
+                    showToast('Помилка при відправці замовлення.');
+                    button.disabled = false;
+                    button.classList.remove('working');
+                }}
+            }});
+            
+            renderMenu(menuData);
+            renderHistory();
+            updateCartView();
+        }});
+    </script>
+</body>
+</html>
+"""
+
 WEB_ORDER_HTML = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -1260,6 +2418,18 @@ WEB_ORDER_HTML = """
                 <div id="specific-time-group" class="form-group" style="display: none;">
                     <input type="text" id="specific_time_input" placeholder="Введіть час (напр. 18:30)">
                 </div>
+
+                <div class="form-group">
+                    <label>Спосіб оплати:</label>
+                    <div class="radio-group">
+                        <input type="radio" id="pay_cash" name="payment_method" value="cash" checked>
+                        <label for="pay_cash"><i class="fa-solid fa-money-bill-wave"></i> Готівка</label>
+                        
+                        <input type="radio" id="pay_card" name="payment_method" value="card">
+                        <label for="pay_card"><i class="fa-regular fa-credit-card"></i> Картка</label>
+                    </div>
+                </div>
+
                 <button type="submit" id="place-order-btn">Замовити</button>
             </form>
         </div>
@@ -1593,6 +2763,10 @@ WEB_ORDER_HTML = """
                 e.preventDefault();
                 const deliveryType = document.querySelector('input[name="delivery_type"]:checked').value;
                 const timeType = document.querySelector('input[name="delivery_time"]:checked').value;
+                
+                // ПОЛУЧЕНИЕ ВЫБРАННОГО МЕТОДА ОПЛАТЫ
+                const paymentMethod = document.querySelector('input[name="payment_method"]:checked').value;
+
                 let deliveryTime = "Якнайшвидше";
                 if (timeType === 'specific') {{
                     deliveryTime = document.getElementById('specific_time_input').value || "Не вказано";
@@ -1603,6 +2777,7 @@ WEB_ORDER_HTML = """
                     address: deliveryType === 'delivery' ? addressInput.value : null,
                     is_delivery: deliveryType === 'delivery',
                     delivery_time: deliveryTime,
+                    payment_method: paymentMethod, // Передаем метод оплаты
                     items: Object.values(cart)
                 }};
                 const response = await fetch('/api/place_order', {{
@@ -1684,1141 +2859,6 @@ WEB_ORDER_HTML = """
 </html>
 """
 
-ADMIN_EMPLOYEE_BODY = """
-<div class="card">
-    <ul class="nav-tabs">
-        <li class="nav-item"><a href="/admin/employees" class="active">Співробітники</a></li>
-        <li class="nav-item"><a href="/admin/roles">Ролі</a></li>
-    </ul>
-    <h2>👤 Додати співробітника</h2>
-    <form action="/admin/add_employee" method="post">
-        <label for="full_name">Повне ім'я:</label><input type="text" id="full_name" name="full_name" required>
-        <label for="phone_number">Номер телефону (для авторизації):</label><input type="text" id="phone_number" name="phone_number" placeholder="+380XX XXX XX XX" required>
-        <label for="role_id">Роль:</label><select id="role_id" name="role_id" required>{role_options}</select>
-        <button type="submit">Додати співробітника</button>
-    </form>
-</div>
-<div class="card">
-    <h2>👥 Список співробітників</h2>
-    <p>🟢 - На зміні (авторизований)</p>
-    <table><thead><tr><th>ID</th><th>Ім'я</th><th>Телефон</th><th>Роль</th><th>Статус</th><th>Telegram ID</th><th>Дії</th></tr></thead><tbody>
-    {rows}
-    </tbody></table>
-</div>
-"""
-ADMIN_ROLES_BODY = """
-<div class="card">
-    <ul class="nav-tabs">
-        <li class="nav-item"><a href="/admin/employees">Співробітники</a></li>
-        <li class="nav-item"><a href="/admin/roles" class="active">Ролі</a></li>
-    </ul>
-    <h2>Додати нову роль</h2>
-    <form action="/admin/add_role" method="post">
-        <label for="name">Назва ролі:</label><input type="text" id="name" name="name" required>
-        <div class="checkbox-group">
-            <input type="checkbox" id="can_manage_orders" name="can_manage_orders" value="true">
-            <label for="can_manage_orders">Може керувати замовленнями (Оператор)</label>
-        </div>
-        <div class="checkbox-group">
-            <input type="checkbox" id="can_be_assigned" name="can_be_assigned" value="true">
-            <label for="can_be_assigned">Може бути призначений на замовлення (Кур'єр)</label>
-        </div>
-        <div class="checkbox-group">
-            <input type="checkbox" id="can_serve_tables" name="can_serve_tables" value="true">
-            <label for="can_serve_tables">Може обслуговувати столики (Офіціант)</label>
-        </div>
-        <button type="submit">Додати роль</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Список ролей</h2>
-    <table><thead><tr><th>ID</th><th>Назва</th><th>Керув. замовл.</th><th>Признач. доставку</th><th>Обслуг. столики</th><th>Дії</th></tr></thead><tbody>
-    {rows}
-    </tbody></table>
-</div>
-"""
-ADMIN_REPORTS_BODY = """
-<div class="card">
-    <h2>Фільтр звіту</h2>
-    <form action="/admin/reports/couriers" method="get" class="search-form">
-        <label for="date_from">Дата з:</label>
-        <input type="date" id="date_from" name="date_from" value="{date_from}">
-        <label for="date_to">Дата по:</label>
-        <input type="date" id="date_to" name="date_to" value="{date_to}">
-        <button type="submit">Сформувати звіт</button>
-    </form>
-</div>
-<div class="card">
-    <h2>Результати звіту за період з {date_from_formatted} по {date_to_formatted}</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Ім'я кур'єра</th>
-                <th>Кількість виконаних замовлень</th>
-            </tr>
-        </thead>
-        <tbody>
-            {report_rows}
-        </tbody>
-    </table>
-</div>
-"""
-
-ADMIN_SETTINGS_BODY = """
-<div class="card">
-    <form action="/admin/settings" method="post" enctype="multipart/form-data">
-        <h2>⚙️ Основні налаштування</h2>
-        
-        <h3>Зовнішній вигляд</h3>
-        <label>Логотип (завантажте новий, щоб замінити):</label>
-        <input type="file" name="logo_file" accept="image/*">
-        {current_logo_html}
-
-        <h3 style="margin-top: 2rem;">Налаштування Favicon</h3>
-        <p>Завантажте необхідні файли favicon. Після завантаження оновіть сторінку (Ctrl+F5), щоб побачити зміни.</p>
-        <h4>Поточні іконки</h4>
-        <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-bottom: 2rem; background: #f0f0f0; padding: 1rem; border-radius: 8px;">
-            <div><img src="/static/favicons/favicon-16x16.png?v={cache_buster}" alt="16x16" style="border: 1px solid #ccc;"><br><small>16x16</small></div>
-            <div><img src="/static/favicons/favicon-32x32.png?v={cache_buster}" alt="32x32" style="border: 1px solid #ccc;"><br><small>32x32</small></div>
-            <div><img src="/static/favicons/apple-touch-icon.png?v={cache_buster}" alt="Apple Touch Icon" style="width: 60px; height: 60px; border: 1px solid #ccc;"><br><small>Apple Icon</small></div>
-        </div>
-
-        <h4>Завантажити нові іконки</h4>
-        <div class="form-grid" style="grid-template-columns: 1fr;">
-            <div class="form-group"><label for="apple_touch_icon">apple-touch-icon.png (180x180)</label><input type="file" id="apple_touch_icon" name="apple_touch_icon" accept="image/png"></div>
-            <div class="form-group"><label for="favicon_32x32">favicon-32x32.png</label><input type="file" id="favicon_32x32" name="favicon_32x32" accept="image/png"></div>
-            <div class="form-group"><label for="favicon_16x16">favicon-16x16.png</label><input type="file" id="favicon_16x16" name="favicon_16x16" accept="image/png"></div>
-            <div class="form-group"><label for="favicon_ico">favicon.ico (всі розміри)</label><input type="file" id="favicon_ico" name="favicon_ico" accept="image/x-icon"></div>
-            <div class="form-group"><label for="site_webmanifest">site.webmanifest</label><input type="file" id="site_webmanifest" name="site_webmanifest" accept="application/manifest+json"></div>
-        </div>
-        
-        <div style="margin-top: 2rem;">
-            <button type="submit">Зберегти всі налаштування</button>
-        </div>
-    </form>
-</div>
-"""
-
-
-ADMIN_MENU_BODY = """
-<div class="card">
-    <h2>{form_title}</h2>
-    <form action="{form_action}" method="post">
-        <label for="title">Заголовок (текст на кнопці):</label>
-        <input type="text" id="title" name="title" value="{item_title}" required>
-        
-        <label for="content">Зміст сторінки (можна використовувати HTML-теги):</label>
-        <textarea id="content" name="content" rows="10" required>{item_content}</textarea>
-        
-        <label for="sort_order">Порядок сортування (менше = вище):</label>
-        <input type="number" id="sort_order" name="sort_order" value="{item_sort_order}" required>
-        
-        <div class="checkbox-group">
-            <input type="checkbox" id="show_on_website" name="show_on_website" value="true" {item_show_on_website_checked}>
-            <label for="show_on_website">Показувати на сайті</label>
-        </div>
-        <div class="checkbox-group">
-            <input type="checkbox" id="show_in_telegram" name="show_in_telegram" value="true" {item_show_in_telegram_checked}>
-            <label for="show_in_telegram">Показувати в Telegram-боті</label>
-        </div>
-        
-        <button type="submit">{button_text}</button>
-        <a href="/admin/menu" class="button secondary">Скасувати</a>
-    </form>
-</div>
-<div class="card">
-    <h2>📜 Список сторінок</h2>
-    <div class="table-wrapper">
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Заголовок</th>
-                    <th>Сортування</th>
-                    <th>На сайті</th>
-                    <th>В Telegram</th>
-                    <th>Дії</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-    </div>
-</div>
-"""
-
-ADMIN_ORDER_MANAGE_BODY = """
-<style>
-    .manage-grid {{
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 2rem;
-    }}
-    .order-details-card .detail-item {{
-        display: flex;
-        justify-content: space-between;
-        padding: 0.75rem 0;
-        border-bottom: 1px solid var(--border-light);
-    }}
-    .order-details-card .detail-item:last-child {{
-        border-bottom: none;
-    }}
-    .order-details-card .detail-item strong {{
-        color: #6b7280;
-    }}
-    body.dark-mode .order-details-card .detail-item strong {{
-        color: #9ca3af;
-    }}
-    .status-history {{
-        list-style-type: none;
-        padding-left: 1rem;
-        border-left: 2px solid var(--border-light);
-    }}
-    .status-history li {{
-        margin-bottom: 0.75rem;
-        position: relative;
-        font-size: 0.9rem;
-    }}
-    .status-history li::before {{
-        content: '✓';
-        position: absolute;
-        left: -1.1rem;
-        top: 2px;
-        color: var(--primary-color);
-        font-weight: 900;
-    }}
-    @media (max-width: 992px) {{
-        .manage-grid {{
-            grid-template-columns: 1fr;
-        }}
-    }}
-</style>
-<div class="manage-grid">
-    <div class="left-column">
-        <div class="card order-details-card">
-            <h2>Деталі замовлення #{order_id}</h2>
-            <div class="detail-item">
-                <strong>Клієнт:</strong>
-                <span>{customer_name}</span>
-            </div>
-            <div class="detail-item">
-                <strong>Телефон:</strong>
-                <span>{phone_number}</span>
-            </div>
-            <div class="detail-item">
-                <strong>Адреса:</strong>
-                <span>{address}</span>
-            </div>
-             <div class="detail-item">
-                <strong>Сума:</strong>
-                <span>{total_price} грн</span>
-            </div>
-            <div class="detail-item" style="flex-direction: column; align-items: start;">
-                <strong style="margin-bottom: 0.5rem;">Склад замовлення:</strong>
-                <div>{products_html}</div>
-            </div>
-        </div>
-        <div class="card">
-            <h2>Історія статусів</h2>
-            {history_html}
-        </div>
-    </div>
-    <div class="right-column">
-        <div class="card">
-            <h2>Керування статусом</h2>
-            <form action="/admin/order/manage/{order_id}/set_status" method="post">
-                <label for="status_id">Новий статус:</label>
-                <select name="status_id" id="status_id" required>
-                    {status_options}
-                </select>
-                <button type="submit">Змінити статус</button>
-            </form>
-        </div>
-        <div class="card">
-            <h2>Призначення кур'єра</h2>
-            <form action="/admin/order/manage/{order_id}/assign_courier" method="post">
-                <label for="courier_id">Кур'єр (на зміні):</label>
-                <select name="courier_id" id="courier_id" required>
-                    {courier_options}
-                </select>
-                <button type="submit">Призначити кур'єра</button>
-            </form>
-        </div>
-    </div>
-</div>
-"""
-
-
-ADMIN_CLIENTS_LIST_BODY = """
-<div class="card">
-    <h2><i class="fa-solid fa-users-line"></i> Список клієнтів</h2>
-    <form action="/admin/clients" method="get" class="search-form">
-        <input type="text" name="search" placeholder="Пошук за іменем або телефоном..." value="{search_query}">
-        <button type="submit">🔍 Знайти</button>
-    </form>
-    <div class="table-wrapper">
-        <table>
-            <thead>
-                <tr>
-                    <th>Ім'я</th>
-                    <th>Телефон</th>
-                    <th>Всього замовлень</th>
-                    <th>Загальна сума</th>
-                    <th>Дії</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-    </div>
-    {pagination}
-</div>
-"""
-
-ADMIN_CLIENT_DETAIL_BODY = """
-<style>
-    .client-info-grid {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }}
-    .info-block {{
-        background-color: var(--bg-light);
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border: 1px solid var(--border-light);
-    }}
-    .info-block h4 {{
-        font-size: 0.9rem;
-        color: #6b7280;
-        text-transform: uppercase;
-        margin-bottom: 0.5rem;
-    }}
-    .info-block p {{
-        font-size: 1.1rem;
-        font-weight: 600;
-    }}
-    .order-summary-row {{
-        cursor: pointer;
-    }}
-    .order-summary-row:hover {{
-        background-color: #f3f4f6;
-    }}
-    body.dark-mode .order-summary-row:hover {{
-        background-color: #374151;
-    }}
-    .order-details-row {{
-        display: none;
-    }}
-    .details-content {{
-        padding: 1.5rem;
-        background-color: var(--bg-light);
-    }}
-    .status-history {{
-        list-style-type: none;
-        padding-left: 1rem;
-        border-left: 2px solid var(--border-light);
-    }}
-    .status-history li {{
-        margin-bottom: 0.5rem;
-        position: relative;
-    }}
-    .status-history li::before {{
-        content: '✓';
-        position: absolute;
-        left: -1.1rem;
-        top: 2px;
-        color: var(--primary-color);
-        font-weight: 900;
-    }}
-</style>
-<div class="card">
-    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem;">
-        <i class="fa-solid fa-user-circle" style="font-size: 3rem;"></i>
-        <div>
-            <h2 style="margin-bottom: 0;">{client_name}</h2>
-            <a href="tel:{phone_number}">{phone_number}</a>
-        </div>
-    </div>
-    <div class="client-info-grid">
-        <div class="info-block">
-            <h4>Остання адреса</h4>
-            <p>{address}</p>
-        </div>
-        <div class="info-block">
-            <h4>Всього замовлень</h4>
-            <p>{total_orders}</p>
-        </div>
-        <div class="info-block">
-            <h4>Загальна сума</h4>
-            <p>{total_spent} грн</p>
-        </div>
-    </div>
-</div>
-<div class="card">
-    <h3>Історія замовлень</h3>
-    <div class="table-wrapper">
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Дата</th>
-                    <th>Статус</th>
-                    <th>Сума</th>
-                    <th>Доставив</th>
-                    <th>Деталі</th>
-                </tr>
-            </thead>
-            <tbody>
-                {order_rows}
-            </tbody>
-        </table>
-    </div>
-</div>
-<script>
-    function toggleDetails(row) {{
-        const detailsRow = row.nextElementSibling;
-        const icon = row.querySelector('i');
-        if (detailsRow.style.display === 'table-row') {{
-            detailsRow.style.display = 'none';
-            icon.classList.remove('fa-chevron-up');
-            icon.classList.add('fa-chevron-down');
-        }} else {{
-            detailsRow.style.display = 'table-row';
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
-        }}
-    }}
-</script>
-"""
-
-IN_HOUSE_MENU_HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="uk">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{site_title} - {table_name}</title>
-    <meta name="description" content="{seo_description}">
-    <meta name="keywords" content="{seo_keywords}">
-    <meta name="robots" content="noindex, nofollow">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
-    <link rel="manifest" href="/static/favicons/site.webmanifest">
-    <link rel="shortcut icon" href="/static/favicons/favicon.ico">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family={font_family_serif_encoded}:wght@400;700&family={font_family_sans_encoded}:wght@400;600&display=swap" rel="stylesheet">
-    
-    <style>
-      :root {{
-        --primary-color: {primary_color_val};
-        --secondary-color: {secondary_color_val};
-        --background-color: {background_color_val};
-        --text-color: {text_color_val}; /* NEW */
-        --footer-bg-color: {footer_bg_color_val}; /* NEW */
-        --footer-text-color: {footer_text_color_val}; /* NEW */
-        
-        --primary-hover-color: color-mix(in srgb, {primary_color_val}, black 10%);
-        --primary-glow-color: {primary_color_val}26;
-      }}
-      
-      body, .category-nav a, .add-to-cart-btn, .action-btn, #checkout-form, .radio-group label {{
-        font-family: '{font_family_sans_val}', sans-serif;
-      }}
-      header h1, .category-title, .product-name, .product-price, .cart-header h2, .modal-content h2 {{
-        font-family: '{font_family_serif_val}', serif;
-      }}
-    </style>
-    <style>
-        :root {{
-            --bg-color: var(--background-color, #f4f4f4);
-            --card-bg: #ffffff;
-            --border-color: var(--secondary-color, #dddddd);
-            --dark-text-for-accent: #ffffff;
-            --side-padding: 20px;
-        }}
-        @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
-        @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
-        @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
-        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-        html {{ scroll-behavior: smooth; overflow-y: scroll; }}
-        body {{
-            margin: 0;
-            background-color: var(--bg-color);
-            color: var(--text-color); /* Updated */
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }}
-        .container {{ width: 100%; margin: 0 auto; padding: 0; }}
-        header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
-        .header-logo-container {{ display: inline-block; margin-bottom: 25px; }}
-        .header-logo {{ height: 100px; width: auto; }}
-        header h1 {{
-            font-size: clamp(2.5em, 5vw, 3.5em);
-            color: var(--text-color); margin: 0; font-weight: 700;
-        }}
-        header p {{
-            font-size: clamp(1em, 2vw, 1.2em);
-            color: #888; margin-top: 10px; letter-spacing: 4px; text-transform: uppercase;
-        }}
-        .table-name-header {{
-            font-size: clamp(1.2em, 2.5vw, 1.5em);
-            color: var(--primary-color); margin-top: 20px;
-        }}
-
-        .category-nav {{
-            display: flex; position: sticky; top: -1px;
-            background-color: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px);
-            z-index: 100; animation: fadeIn 0.5s ease-out; overflow-x: auto;
-            white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-            border-top: 1px solid var(--border-color);
-            border-bottom: 1px solid var(--border-color);
-            width: 100%; padding: 15px 0;
-        }}
-        .category-nav::-webkit-scrollbar {{ display: none; }}
-        .category-nav a {{
-            color: var(--text-color); text-decoration: none; padding: 10px 25px;
-            border: 1px solid var(--border-color); border-radius: 20px;
-            transition: all 0.3s ease; font-weight: 500; flex-shrink: 0; margin: 0 10px;
-        }}
-        .category-nav a:first-child {{ margin-left: var(--side-padding); }}
-        .category-nav a:last-child {{ margin-right: var(--side-padding); }}
-        .category-nav a:hover, .category-nav a.active {{
-            background-color: var(--primary-color); color: var(--dark-text-for-accent);
-            border-color: var(--primary-color); transform: scale(1.05); font-weight: 600;
-            box-shadow: 0 0 15px var(--primary-glow-color);
-        }}
-        
-        #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); margin-bottom: 40px; }}
-        .category-section {{ margin-bottom: 30px; padding-top: 90px; margin-top: -90px; }}
-        .category-title {{
-            font-size: clamp(2.2em, 4vw, 2.8em);
-            color: var(--primary-color); padding-bottom: 15px; margin-bottom: 40px;
-            text-align: center; border-bottom: 1px solid var(--border-color); position: relative;
-        }}
-        .category-title::after {{
-            content: ''; position: absolute; bottom: -1px; left: 50%;
-            transform: translateX(-50%); width: 100px; height: 2px;
-            background-color: var(--primary-color); box-shadow: 0 0 10px var(--primary-glow-color);
-        }}
-        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }}
-        .product-card {{
-            background-color: var(--card-bg); border: 1px solid var(--border-color);
-            border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
-            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-            animation: fadeIn 0.5s ease-out forwards; opacity: 0;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }}
-        .product-card:hover {{
-            transform: translateY(-10px);
-            box-shadow: 0 15px 30px rgba(0,0,0,0.1), 0 0 20px var(--primary-glow-color);
-            border-color: var(--primary-color);
-        }}
-        .product-image-wrapper {{ width: 100%; height: 220px; position: relative; overflow: hidden; }}
-        .product-image {{ width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }}
-        .product-card:hover .product-image {{ transform: scale(1.1); }}
-        .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
-        .product-name {{ font-size: 1.7em; margin: 0 0 10px; color: #333; }}
-        .product-desc {{ font-size: 0.9em; color: #777; margin: 0 0 20px; flex-grow: 1; line-height: 1.6; }}
-        .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
-        .product-price {{ font-size: 1.8em; color: var(--primary-color); }}
-        .add-to-cart-btn {{
-            background: var(--primary-color); color: var(--dark-text-for-accent);
-            border: none; padding: 12px 22px; border-radius: 5px; cursor: pointer;
-            font-weight: 600; font-size: 0.9em; transition: all 0.3s ease;
-        }}
-        .add-to-cart-btn.added {{ background-color: #28a745; color: white; }}
-        .add-to-cart-btn:hover {{
-            background-color: var(--primary-hover-color); transform: scale(1.05);
-            box-shadow: 0 0 15px var(--primary-glow-color);
-        }}
-        
-        #cart-sidebar, #history-sidebar {{
-            position: fixed; top: 0; right: -100%; width: 100%; max-width: 420px; height: 100%;
-            background-color: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px);
-            border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.1);
-            transition: all 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000;
-            color: #333;
-        }}
-        #history-sidebar {{ left: -100%; right: auto; border-left: none; border-right: 1px solid var(--border-color); box-shadow: 5px 0 25px rgba(0,0,0,0.1); }}
-
-        #cart-sidebar.open {{ right: 0; }}
-        #history-sidebar.open {{ left: 0; }}
-
-        .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
-        .cart-header h2 {{ margin: 0; color: var(--primary-color); }}
-        #close-cart-btn, #close-history-btn {{ background: none; border: none; color: #333; font-size: 2.5em; cursor: pointer; line-height: 1; transition: transform 0.2s ease, color 0.2s ease;}}
-        #close-cart-btn:hover, #close-history-btn:hover {{ color: var(--primary-color); transform: rotate(90deg); }}
-        
-        .cart-items {{ flex-grow: 1; overflow-y: auto; padding: 20px; }}
-        .cart-item {{ animation: popIn 0.3s ease-out; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }}
-        .cart-item-info {{ flex-grow: 1; }} .cart-item-name {{ font-weight: 600; }}
-        .cart-item-price {{ color: #555; font-size: 0.9em; }}
-        .cart-item-controls {{ display: flex; align-items: center; }}
-        .cart-item-controls button {{ background: var(--secondary-color, #eee); border: 1px solid var(--border-color); color: #333; width: 28px; height: 28px; cursor: pointer; border-radius: 50%; }}
-        .cart-item-controls span {{ margin: 0 10px; }}
-        .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); background-color: rgba(255, 255, 255, 0.8); }}
-        .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
-        
-        .action-buttons {{ padding: 0 20px 20px; display: flex; flex-direction: column; gap: 10px; }}
-        .action-btn, #place-order-btn {{
-            width: 100%; padding: 15px; font-size: 1.1em; cursor: pointer; border-radius: 5px;
-            font-weight: 700; border: 1px solid var(--primary-color); display: flex;
-            align-items: center; justify-content: center; gap: 10px;
-            transition: all 0.3s ease;
-        }}
-        .action-btn svg, #place-order-btn svg {{ width: 20px; height: 20px; }}
-        #place-order-btn {{ background-color: var(--primary-color); color: var(--dark-text-for-accent); border-color: var(--primary-color); }}
-        #place-order-btn:hover:not(:disabled) {{ background-color: var(--primary-hover-color); box-shadow: 0 0 15px var(--primary-glow-color); }}
-        #place-order-btn:disabled {{ background-color: #aaa; color: #eee; cursor: not-allowed; border-color: #aaa; }}
-        .call-waiter-btn, .request-bill-btn {{ background-color: transparent; color: var(--primary-color); }}
-        .call-waiter-btn:hover, .request-bill-btn:hover {{ background-color: var(--secondary-color, #f4f4f4); }}
-
-        /* Floating Buttons */
-        #cart-toggle {{
-            position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color);
-            color: var(--dark-text-for-accent); border: none; border-radius: 50%;
-            width: 60px; height: 60px; cursor: pointer; z-index: 1001;
-            display: flex; justify-content: center; align-items: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s ease;
-        }}
-        #history-toggle {{
-            position: fixed; bottom: 20px; left: 20px; background-color: #fff;
-            color: var(--primary-color); border: 1px solid var(--primary-color); border-radius: 50%;
-            width: 60px; height: 60px; cursor: pointer; z-index: 1001;
-            display: flex; justify-content: center; align-items: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: all 0.3s ease;
-        }}
-        
-        #cart-toggle.popping {{ animation: cartPop 0.4s ease; }}
-        #cart-toggle svg, #history-toggle svg {{ width: 28px; height: 28px; }}
-        #cart-toggle:hover {{ transform: scale(1.1); background-color: var(--primary-hover-color); }}
-        #history-toggle:hover {{ transform: scale(1.1); background-color: #f9f9f9; }}
-        
-        #cart-count {{
-            position: absolute; top: -5px; right: -5px; background: var(--primary-color);
-            color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px;
-            font-size: 0.8em; display: flex; justify-content: center; align-items: center;
-            font-weight: 700; border: 2px solid var(--card-bg);
-        }}
-        
-        /* Styles for History Items */
-        .history-item {{
-            padding: 15px; border: 1px solid var(--border-color); border-radius: 8px;
-            margin-bottom: 15px; background-color: rgba(0,0,0,0.02);
-        }}
-        .history-header {{ display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em; color: #777; }}
-        .history-products {{ font-weight: 500; margin-bottom: 10px; line-height: 1.4; }}
-        .history-footer {{ display: flex; justify-content: space-between; font-weight: 700; color: var(--primary-color); }}
-        .grand-total-section {{
-            margin-top: 20px; padding-top: 15px; border-top: 2px dashed var(--border-color);
-            font-size: 1.1em;
-        }}
-        .total-row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
-        .total-row.final {{ font-size: 1.3em; font-weight: 800; color: var(--primary-color); margin-top: 10px; }}
-
-        .toast {{
-            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-            background-color: #333; color: #fff; padding: 15px 25px; border-radius: 8px;
-            z-index: 3000; opacity: 0; transition: opacity 0.5s, transform 0.5s;
-            pointer-events: none; border: 1px solid var(--primary-color);
-            box-shadow: 0 0 20px var(--primary-glow-color);
-        }}
-        .toast.show {{ opacity: 1; transform: translateX(-50%) translateY(-20px); }}
-        .btn-spinner {{
-            display: none; border: 2px solid rgba(255,255,255,0.3);
-            border-top: 2px solid var(--dark-text-for-accent);
-            border-radius: 50%; width: 18px; height: 18px;
-            animation: spin 0.8s linear infinite;
-        }}
-        button.working .btn-spinner {{ display: inline-block; }}
-        button.working span {{ vertical-align: middle; }}
-        #loader {{ display: flex; justify-content: center; align-items: center; height: 80vh; }}
-        .spinner {{ border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }}
-        
-        /* --- NEW Footer Styles --- */
-        footer {{
-            background-color: var(--footer-bg-color);
-            color: var(--footer-text-color);
-            padding: 50px var(--side-padding) 30px;
-            margin-top: auto;
-            border-top: 1px solid var(--border-color);
-        }}
-        .footer-content {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 40px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        .footer-section h4 {{
-            font-size: 1.3em;
-            margin-bottom: 20px;
-            font-weight: 700;
-            position: relative;
-            padding-bottom: 10px;
-            color: var(--footer-text-color);
-        }}
-        .footer-section h4::after {{
-            content: '';
-            position: absolute;
-            left: 0;
-            bottom: 0;
-            width: 50px;
-            height: 2px;
-            background-color: var(--primary-color);
-        }}
-        .footer-contact-item {{
-            display: flex;
-            align-items: flex-start;
-            margin-bottom: 15px;
-            font-size: 0.95em;
-            line-height: 1.5;
-        }}
-        .footer-contact-item i {{
-            margin-right: 12px;
-            color: var(--primary-color);
-            margin-top: 4px;
-            font-size: 1.1em;
-        }}
-        .footer-contact-item a {{
-            color: var(--footer-text-color);
-            text-decoration: none;
-            transition: color 0.2s;
-        }}
-        .footer-contact-item a:hover {{
-            color: var(--primary-color);
-        }}
-        .footer-social {{
-            display: flex;
-            gap: 15px;
-            margin-top: 10px;
-        }}
-        .footer-social a {{
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 40px;
-            background-color: rgba(255,255,255,0.1);
-            border-radius: 50%;
-            color: var(--footer-text-color);
-            font-size: 1.2em;
-            transition: all 0.3s ease;
-            text-decoration: none;
-        }}
-        .footer-social a:hover {{
-            background-color: var(--primary-color);
-            color: var(--dark-text-for-accent);
-            transform: translateY(-3px);
-        }}
-        .footer-bottom {{
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255,255,255,0.1);
-            font-size: 0.85em;
-            opacity: 0.8;
-        }}
-    </style>
-</head>
-<body>
-    <header>
-        <div class="header-logo-container">
-            {logo_html}
-        </div>
-        <h1>{site_title}</h1> <h2 class="table-name-header">{table_name}</h2>
-    </header>
-    <div class="container">
-        <nav id="category-nav" class="category-nav"></nav>
-        <main id="menu">
-            <div id="loader"><div class="spinner"></div></div>
-        </main>
-    </div>
-    <div style="height: 100px;"></div>
-    
-    <button id="history-toggle" title="Історія та Рахунок">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        </svg>
-    </button>
-
-    <button id="cart-toggle">
-        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z"></path></svg>
-        <span id="cart-count">0</span>
-    </button>
-
-    <aside id="history-sidebar">
-        <div class="cart-header">
-            <h2>Ваш рахунок</h2>
-            <button id="close-history-btn">&times;</button>
-        </div>
-        <div class="cart-items">
-            <div id="history-list"></div>
-            
-            <div class="grand-total-section">
-                <div class="total-row">
-                    <span>Замовлені страви:</span>
-                    <span><b id="history-total">{grand_total}</b> грн</span>
-                </div>
-                <div class="total-row" style="color: #777;">
-                    <span>Поточний кошик:</span>
-                    <span id="cart-pending-total">0 грн</span>
-                </div>
-                <div class="total-row final">
-                    <span>Разом до сплати:</span>
-                    <span id="grand-total-display">{grand_total} грн</span>
-                </div>
-            </div>
-        </div>
-        <div class="action-buttons">
-             <button class="action-btn request-bill-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3.375m-3.375 2.25h10.5m4.5 0a4.5 4.5 0 00-4.5-4.5h-2.25a4.5 4.5 0 00-4.5 4.5v2.25a4.5 4.5 0 004.5 4.5h2.25a4.5 4.5 0 004.5-4.5v-2.25z" /></svg>
-                <div class="btn-spinner"></div>
-                <span>Попросити рахунок</span>
-            </button>
-        </div>
-    </aside>
-
-    <aside id="cart-sidebar">
-        <div class="cart-header">
-            <h2>Ваше замовлення</h2>
-            <button id="close-cart-btn">&times;</button>
-        </div>
-        <div id="cart-items-container" class="cart-items"></div>
-        <div class="cart-footer">
-            <div class="cart-total">
-                <span>Всього:</span>
-                <span id="cart-total-price">0 грн</span>
-            </div>
-            <button id="place-order-btn" disabled>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <div class="btn-spinner"></div>
-                <span>Замовити</span>
-            </button>
-        </div>
-        <div class="action-buttons">
-            <button class="action-btn call-waiter-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
-                <div class="btn-spinner"></div>
-                <span>Викликати офіціанта</span>
-            </button>
-        </div>
-    </aside>
-    <div id="toast" class="toast"></div>
-    
-    <footer>
-        <div class="footer-content">
-            <div class="footer-section">
-                <h4>Контакти</h4>
-                <div class="footer-contact-item">
-                    <i class="fa-solid fa-location-dot"></i>
-                    <span>{footer_address}</span>
-                </div>
-                <div class="footer-contact-item">
-                    <i class="fa-solid fa-phone"></i>
-                    <a href="tel:{footer_phone}">{footer_phone}</a>
-                </div>
-                 <div class="footer-contact-item">
-                    <i class="fa-solid fa-clock"></i>
-                    <span>{working_hours}</span>
-                </div>
-            </div>
-            <div class="footer-section">
-                <h4>Ми в соцмережах</h4>
-                <div class="footer-social">
-                    {social_links_html}
-                </div>
-            </div>
-        </div>
-        <div class="footer-bottom">
-            <p>&copy; 2024 {site_title}. Всі права захищені.</p>
-        </div>
-    </footer>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {{
-            const TABLE_ID = {table_id};
-            let cart = {{}};
-            const menuData = {menu_data};
-            
-            // --- NEW: Data from backend ---
-            const historyData = {history_data};
-            const initialGrandTotal = {grand_total};
-
-            const menuContainer = document.getElementById('menu');
-            const categoryNav = document.getElementById('category-nav');
-            const cartSidebar = document.getElementById('cart-sidebar');
-            const historySidebar = document.getElementById('history-sidebar'); // New sidebar
-            const cartToggle = document.getElementById('cart-toggle');
-            const historyToggle = document.getElementById('history-toggle'); // New toggle
-            const closeCartBtn = document.getElementById('close-cart-btn');
-            const closeHistoryBtn = document.getElementById('close-history-btn'); // New close
-            const cartItemsContainer = document.getElementById('cart-items-container');
-            const cartTotalPriceEl = document.getElementById('cart-total-price');
-            const cartCountEl = document.getElementById('cart-count');
-            const placeOrderBtn = document.getElementById('place-order-btn');
-            const toastEl = document.getElementById('toast');
-            const loader = document.getElementById('loader');
-            
-            // --- Elements for Bill Summary ---
-            const historyListEl = document.getElementById('history-list');
-            const cartPendingTotalEl = document.getElementById('cart-pending-total');
-            const grandTotalDisplayEl = document.getElementById('grand-total-display');
-            
-            const showToast = (message) => {{
-                toastEl.textContent = message;
-                toastEl.classList.add('show');
-                setTimeout(() => {{
-                    toastEl.classList.remove('show');
-                }}, 4000);
-            }};
-            
-            // --- Render History ---
-            const renderHistory = () => {{
-                historyListEl.innerHTML = '';
-                if (historyData.length === 0) {{
-                    historyListEl.innerHTML = '<p style="text-align:center; color:#888;">Історія замовлень порожня.</p>';
-                    return;
-                }}
-                
-                historyData.forEach(order => {{
-                    const item = document.createElement('div');
-                    item.className = 'history-item';
-                    // Format products list properly
-                    const productsHtml = order.products.replace(/, /g, '<br>');
-                    
-                    item.innerHTML = `
-                        <div class="history-header">
-                            <span>#${{order.id}} • ${{order.time}}</span>
-                            <span>${{order.status}}</span>
-                        </div>
-                        <div class="history-products">${{productsHtml}}</div>
-                        <div class="history-footer">
-                            <span>Сума:</span>
-                            <span>${{order.total_price}} грн</span>
-                        </div>
-                    `;
-                    historyListEl.appendChild(item);
-                }});
-            }};
-
-            const updateCartView = () => {{
-                cartItemsContainer.innerHTML = '';
-                let totalPrice = 0;
-                let totalCount = 0;
-                const items = Object.values(cart);
-                if (items.length > 0) {{
-                    items.forEach(item => {{
-                        totalPrice += item.price * item.quantity;
-                        totalCount += item.quantity;
-                        const cartItem = document.createElement('div');
-                        cartItem.className = 'cart-item';
-                        cartItem.innerHTML = `
-                            <div class="cart-item-info">
-                                <div class="cart-item-name">${{item.name}}</div>
-                                <div class="cart-item-price">${{item.quantity}} x ${{item.price}} грн</div>
-                            </div>
-                            <div class="cart-item-controls">
-                                <button data-id="${{item.id}}" class="change-quantity">-</button>
-                                <span>${{item.quantity}}</span>
-                                <button data-id="${{item.id}}" class="change-quantity">+</button>
-                            </div>`;
-                        cartItemsContainer.appendChild(cartItem);
-                    }});
-                    placeOrderBtn.disabled = false;
-                }} else {{
-                    cartItemsContainer.innerHTML = '<p style="text-align:center; color:#888;">Ваш кошик порожній</p>';
-                    placeOrderBtn.disabled = true;
-                }}
-                
-                // Update Cart Totals
-                cartTotalPriceEl.textContent = `${{totalPrice.toFixed(2)}} грн`;
-                cartCountEl.textContent = totalCount;
-                cartCountEl.style.display = totalCount > 0 ? 'flex' : 'none';
-                
-                // Update Bill Summary (History Sidebar)
-                cartPendingTotalEl.textContent = `${{totalPrice}} грн`;
-                const finalTotal = initialGrandTotal + totalPrice;
-                grandTotalDisplayEl.textContent = `${{finalTotal}} грн`;
-            }};
-
-            const renderMenu = (data) => {{
-                menuContainer.innerHTML = '';
-                categoryNav.innerHTML = '';
-                loader.style.display = 'none';
-                data.categories.forEach((category, index) => {{
-                    const navLink = document.createElement('a');
-                    navLink.href = `#category-${{category.id}}`;
-                    navLink.textContent = category.name;
-                    if (index === 0) navLink.classList.add('active');
-                    categoryNav.appendChild(navLink);
-
-                    const categorySection = document.createElement('section');
-                    categorySection.className = 'category-section';
-                    categorySection.id = `category-${{category.id}}`;
-                    categorySection.innerHTML = `<h2 class="category-title">${{category.name}}</h2>`;
-                    
-                    const productsGrid = document.createElement('div');
-                    productsGrid.className = 'products-grid';
-                    const products = data.products.filter(p => p.category_id === category.id);
-                    products.forEach((product, pIndex) => {{
-                        const productCard = document.createElement('div');
-                        productCard.className = 'product-card';
-                        productCard.style.animationDelay = `${{pIndex * 0.05}}s`;
-                        productCard.innerHTML = `
-                            <div class="product-image-wrapper">
-                                <img src="/${{product.image_url || 'static/images/placeholder.jpg'}}" alt="${{product.name}}" class="product-image">
-                            </div>
-                            <div class="product-info">
-                                <h3 class="product-name">${{product.name}}</h3>
-                                <p class="product-desc">${{product.description || ''}}</p>
-                                <div class="product-footer">
-                                    <span class="product-price">${{product.price}} грн</span>
-                                    <button class="add-to-cart-btn" data-id="${{product.id}}" data-name="${{product.name}}" data-price="${{product.price}}">Додати</button>
-                                </div>
-                            </div>`;
-                        productsGrid.appendChild(productCard);
-                    }});
-                    categorySection.appendChild(productsGrid);
-                    menuContainer.appendChild(categorySection);
-                }});
-                setupScrollspy();
-            }};
-
-            const setupScrollspy = () => {{
-                const navLinks = categoryNav.querySelectorAll('a');
-                const sections = document.querySelectorAll('.category-section');
-                const observer = new IntersectionObserver((entries) => {{
-                    entries.forEach(entry => {{
-                        if (entry.isIntersecting) {{
-                            const id = entry.target.getAttribute('id');
-                            const activeLink = document.querySelector(`.category-nav a[href="#${{id}}"]`);
-                            navLinks.forEach(link => link.classList.remove('active'));
-                            activeLink.classList.add('active');
-                            activeLink.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'center' }});
-                        }}
-                    }});
-                }}, {{ root: null, rootMargin: '-40% 0px -60% 0px', threshold: 0 }});
-                sections.forEach(section => observer.observe(section));
-            }};
-            
-            menuContainer.addEventListener('click', e => {{
-                if (e.target.classList.contains('add-to-cart-btn')) {{
-                    const button = e.target;
-                    const id = button.dataset.id;
-                    if (cart[id]) {{
-                        cart[id].quantity++;
-                    }} else {{
-                        cart[id] = {{ id: id, name: button.dataset.name, price: parseInt(button.dataset.price), quantity: 1 }};
-                    }}
-                    updateCartView();
-                    cartToggle.classList.add('popping');
-                    setTimeout(() => cartToggle.classList.remove('popping'), 400);
-                    button.textContent = '✓ Додано';
-                    button.classList.add('added');
-                    setTimeout(() => {{
-                        button.textContent = 'Додати';
-                        button.classList.remove('added');
-                    }}, 1500);
-                }}
-            }});
-
-            cartItemsContainer.addEventListener('click', e => {{
-                const target = e.target;
-                const id = target.dataset.id;
-                if (!id || !target.classList.contains('change-quantity')) return;
-                
-                if (target.textContent === '+') {{
-                    cart[id].quantity++;
-                }} else {{
-                    cart[id].quantity--;
-                    if (cart[id].quantity === 0) delete cart[id];
-                }}
-                updateCartView();
-            }});
-            
-            cartToggle.addEventListener('click', () => {{
-                cartSidebar.classList.add('open');
-                historySidebar.classList.remove('open');
-            }});
-            
-            historyToggle.addEventListener('click', () => {{
-                historySidebar.classList.add('open');
-                cartSidebar.classList.remove('open');
-            }});
-            
-            closeCartBtn.addEventListener('click', () => cartSidebar.classList.remove('open'));
-            closeHistoryBtn.addEventListener('click', () => historySidebar.classList.remove('open'));
-
-            const handleApiButtonClick = async (button, apiUrl) => {{
-                button.disabled = true;
-                button.classList.add('working');
-                try {{
-                    const response = await fetch(apiUrl, {{ method: 'POST' }});
-                    const result = await response.json();
-                    showToast(result.message);
-                }} catch (error) {{
-                    showToast('Сталася помилка. Спробуйте ще раз.');
-                }} finally {{
-                    button.disabled = false;
-                    button.classList.remove('working');
-                }}
-            }};
-
-            document.querySelector('.call-waiter-btn').addEventListener('click', (e) => {{
-                handleApiButtonClick(e.currentTarget, `/api/menu/table/${{TABLE_ID}}/call_waiter`);
-            }});
-            
-            document.querySelector('.request-bill-btn').addEventListener('click', (e) => {{
-                handleApiButtonClick(e.currentTarget, `/api/menu/table/${{TABLE_ID}}/request_bill`);
-            }});
-
-            placeOrderBtn.addEventListener('click', async (e) => {{
-                const button = e.currentTarget;
-                const items = Object.values(cart);
-                if (items.length === 0) return;
-                
-                button.disabled = true;
-                button.classList.add('working');
-
-                try {{
-                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/place_order`, {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify(items)
-                    }});
-                    const result = await response.json();
-                    showToast(result.message);
-                    if (response.ok) {{
-                        cart = {{}};
-                        setTimeout(() => window.location.reload(), 1500);
-                    }}
-                }} catch (error) {{
-                    showToast('Помилка при відправці замовлення.');
-                    button.disabled = false;
-                    button.classList.remove('working');
-                }}
-            }});
-            
-            renderMenu(menuData);
-            renderHistory();
-            updateCartView();
-        }});
-    </script>
-</body>
-</html>
-"""
-
-# Цей шаблон залишаємо тут для сумісності, хоча він також присутній у admin_design_settings.py
 ADMIN_DESIGN_SETTINGS_BODY = """
 <div class="card">
     <form action="/admin/design_settings" method="post">
