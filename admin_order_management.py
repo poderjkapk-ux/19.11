@@ -160,6 +160,11 @@ async def web_set_order_status(
     if not order:
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
     
+    # --- БЛОКУВАННЯ ЗМІН ЗАВЕРШЕНИХ ЗАМОВЛЕНЬ ---
+    if order.status.is_completed_status or order.status.is_cancelled_status:
+        # Повертаємо помилку або редірект з повідомленням (тут помилка для простоти)
+        raise HTTPException(status_code=400, detail="Замовлення вже закрите (виконане або скасоване). Зміна статусу заборонена.")
+
     if order.status_id == status_id:
         return RedirectResponse(url=f"/admin/order/manage/{order_id}", status_code=303)
 
@@ -198,9 +203,13 @@ async def web_assign_courier(
     username: str = Depends(check_credentials)
 ):
     """Обробляє призначення кур'єра на замовлення з веб-панелі."""
-    order = await session.get(Order, order_id)
+    order = await session.get(Order, order_id, options=[joinedload(Order.status)])
     if not order:
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
+
+    # --- БЛОКУВАННЯ ДЛЯ ЗАВЕРШЕНИХ ---
+    if order.status.is_completed_status or order.status.is_cancelled_status:
+        raise HTTPException(status_code=400, detail="Замовлення вже закрите. Призначення кур'єра заборонено.")
 
     admin_bot, _ = await get_bot_instances(session)
     if not admin_bot:

@@ -52,11 +52,14 @@ from courier_handlers import register_courier_handlers
 from notification_manager import notify_new_order_to_staff
 from admin_clients import router as clients_router
 from dependencies import get_db_session, check_credentials
-# --- НОВІ ІМПОРТИ ---
+
+# --- ІМПОРТИ РОУТЕРІВ ---
 from admin_order_management import router as admin_order_router
 from admin_tables import router as admin_tables_router
 from in_house_menu import router as in_house_menu_router
-from admin_design_settings import router as admin_design_router # <-- NEW
+from admin_design_settings import router as admin_design_router
+from admin_inventory import router as admin_inventory_router # Склад
+from admin_cash import router as admin_cash_router # <--- ДОДАНО: КАСА
 # -----------------------------------------------
 
 # --- КОНФІГУРАЦІЯ ---
@@ -717,6 +720,8 @@ app.include_router(clients_router)
 app.include_router(admin_order_router)
 app.include_router(admin_tables_router) # Для адмінки столиків
 app.include_router(admin_design_router) # <-- NEW ROUTER FOR DESIGN
+app.include_router(admin_inventory_router) # Склад
+app.include_router(admin_cash_router) # <--- ДОДАНО: КАСА
 # ------------------------------------
 
 class DbSessionMiddleware:

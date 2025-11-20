@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from models import Order, Settings, OrderStatus, Employee, Role, Product
+# --- СКЛАД: Імпорт сервісу списання ---
+from inventory_service import deduct_ingredients_for_order
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,6 @@ def _parse_products_str(products_str: str) -> dict:
 async def notify_new_order_to_staff(admin_bot: Bot, order: Order, session: AsyncSession):
     """
     Надсилає сповіщення про НОВЕ замовлення в загальний чат, операторам, поварам та барменам.
-    Використовується для веб-доставки та замовлень, створених офіціантом.
     """
     admin_chat_id_str = os.environ.get('ADMIN_CHAT_ID')
     
@@ -95,17 +96,23 @@ async def notify_new_order_to_staff(admin_bot: Bot, order: Order, session: Async
             logger.error(f"Не вдалося відправити нове замовлення оператору/адміну {chat_id}: {e}")
 
     # 2. РОЗПОДІЛ НА ВИРОБНИЦТВО (Кухня/Бар)
-    # Перевіряємо налаштування статусу перед відправкою
+    # Якщо статус нового замовлення одразу вимагає приготування (рідко, але можливо)
     if order.status and order.status.requires_kitchen_notify:
+        # Списуємо продукти
+        warnings = await deduct_ingredients_for_order(session, order)
+        await session.commit()
+        
+        if warnings and admin_chat_id_str:
+             await admin_bot.send_message(admin_chat_id_str, "⚠️ <b>Склад (нове замовлення):</b>\n" + "\n".join(warnings))
+
         await distribute_order_to_production(admin_bot, order, session)
     else:
-        logger.info(f"Замовлення #{order.id} НЕ відправлено на виробництво (налаштування статусу '{order.status.name}').")
+        logger.info(f"Замовлення #{order.id} створено, очікує підтвердження.")
 
 
 async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncSession):
     """
     Розподіляє товари замовлення між Кухнею та Баром і надсилає відповідним працівникам.
-    Викликається з place_in_house_order та notify_new_order_to_staff.
     """
     # 1. Парсимо товари
     products_map = _parse_products_str(order.products)
@@ -145,7 +152,7 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
             role_filter=Role.can_receive_kitchen_orders == True,
             title="🧑‍🍳 ЗАМОВЛЕННЯ НА КУХНЮ",
             session=session,
-            area="kitchen" # <-- Додано маркер цеху
+            area="kitchen"
         )
 
     # 4. Відправляємо на Бар
@@ -157,13 +164,13 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
             role_filter=Role.can_receive_bar_orders == True,
             title="🍹 ЗАМОВЛЕННЯ НА БАР",
             session=session,
-            area="bar" # <-- Додано маркер цеху
+            area="bar"
         )
 
 
 async def send_group_notification(bot: Bot, order: Order, items: list, role_filter, title: str, session: AsyncSession, area: str = "kitchen"):
     """
-    Універсальна функція для відправки чека групі співробітників (повари або бармени).
+    Універсальна функція для відправки чека групі співробітників.
     """
     # Шукаємо ролі
     roles_res = await session.execute(select(Role.id).where(role_filter))
@@ -200,7 +207,6 @@ async def send_group_notification(bot: Bot, order: Order, items: list, role_filt
                 f"<i>Натисніть 'Видача', коли буде готове.</i>")
         
         kb = InlineKeyboardBuilder()
-        # Додаємо area (kitchen/bar) в callback_data
         kb.row(InlineKeyboardButton(text=f"✅ Видача #{order.id}", callback_data=f"chef_ready_{order.id}_{area}"))
         
         for emp in employees:
@@ -220,6 +226,7 @@ async def notify_all_parties_on_status_change(
 ):
     """
     Централізована функція для надсилання всіх сповіщень при зміні статусу.
+    Включає автоматичне списання продуктів при відправці на виробництво.
     """
     await session.refresh(order, ['status', 'courier', 'accepted_by_waiter', 'table'])
     admin_chat_id_str = os.environ.get('ADMIN_CHAT_ID')
@@ -238,10 +245,21 @@ async def notify_all_parties_on_status_change(
         except Exception as e:
             logger.error(f"Не вдалося відправити лог в адмін-чат: {e}")
 
-    # 2. ЛОГІКА ДЛЯ ВИРОБНИЦТВА (Кухня/Бар)
-    # Перевіряємо, чи вимагає новий статус відправки на кухню
+    # 2. ЛОГІКА ДЛЯ ВИРОБНИЦТВА (Кухня/Бар) + СКЛАД
     if new_status.requires_kitchen_notify:
-        # Відправляємо розподілене замовлення
+        # --- АВТОМАТИЧНЕ СПИСАННЯ ---
+        # Функція deduct_ingredients_for_order сама перевіряє is_deducted, 
+        # щоб не списати двічі.
+        warnings = await deduct_ingredients_for_order(session, order)
+        await session.commit() # Зберігаємо факт списання в БД
+        
+        if warnings and admin_chat_id_str:
+            warn_text = "⚠️ <b>Увага! Нестача на складі:</b>\n" + "\n".join(warnings)
+            try:
+                await admin_bot.send_message(admin_chat_id_str, warn_text)
+            except Exception: pass
+
+        # Відправляємо чеки на Кухню/Бар
         await distribute_order_to_production(admin_bot, order, session)
 
     # 3. СПОВІЩЕННЯ ПІД ЧАС ВИДАЧІ ("Готовий до видачі")
@@ -289,7 +307,7 @@ async def notify_all_parties_on_status_change(
 
     # 4. Сповіщення призначеному КУР'ЄРУ (про інші зміни статусу)
     if order.courier and order.courier.telegram_user_id and "Кур'єр" not in actor_info and new_status.name != "Готовий до видачі":
-        if new_status.visible_to_courier: # Тільки якщо статус видимий кур'єру
+        if new_status.visible_to_courier:
             courier_text = f"❗️ Статус вашого замовлення #{order.id} змінено на: <b>{new_status.name}</b>"
             try:
                 await admin_bot.send_message(order.courier.telegram_user_id, courier_text)

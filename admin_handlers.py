@@ -17,7 +17,7 @@ import re
 import os
 
 from models import Order, Product, Category, OrderStatus, Employee, Role, Settings, OrderStatusHistory
-# Ми залишаємо імпорт _generate_waiter_order_view, оскільки він використовується для перегляду замовлень "в закладі"
+# Імпортуємо функцію для генерації вигляду замовлення для офіціанта
 from courier_handlers import _generate_waiter_order_view
 from notification_manager import notify_all_parties_on_status_change
 
@@ -28,8 +28,8 @@ class AdminEditOrderStates(StatesGroup):
     waiting_for_new_name = State()
     waiting_for_new_phone = State()
     waiting_for_new_address = State()
-
-# OperatorAuthStates видалено, бо авторизація тепер у courier_handlers.py
+    # Стан для введення причини скасування
+    waiting_for_cancellation_reason = State()
 
 def parse_products_string(products_str: str) -> dict[str, int]:
     """Розбирає рядок 'Назва x Кількість, ...' на словник."""
@@ -68,18 +68,24 @@ async def _generate_order_admin_view(order: Order, session: AsyncSession):
     courier_info = order.courier.full_name if order.courier else 'Не призначений'
     products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
 
+    reason_html = ""
+    if order.cancellation_reason:
+        reason_html = f"\n<b>🚫 Причина скасування:</b> {html_module.escape(order.cancellation_reason)}\n"
+
     admin_text = (f"<b>Замовлення #{order.id}</b> ({source})\n\n"
                   f"<b>Клієнт:</b> {html_module.escape(order.customer_name)}\n<b>Телефон:</b> {html_module.escape(order.phone_number)}\n"
                   f"<b>{delivery_info}</b>\n<b>{time_info}</b>\n"
                   f"<b>Кур'єр:</b> {courier_info}\n\n"
                   f"<b>Страви:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
-                  f"<b>Статус:</b> {status_name}")
+                  f"<b>Статус:</b> {status_name}{reason_html}")
 
     kb_admin = InlineKeyboardBuilder()
     statuses_res = await session.execute(
         select(OrderStatus).where(OrderStatus.visible_to_operator == True).order_by(OrderStatus.id)
     )
     statuses = statuses_res.scalars().all()
+    
+    # Динамічно формуємо кнопки статусів
     status_buttons = [
         InlineKeyboardButton(text=f"{'✅ ' if s.id == order.status_id else ''}{s.name}", callback_data=f"change_order_status_{order.id}_{s.id}")
         for s in statuses
@@ -128,73 +134,87 @@ async def _display_edit_items_menu(bot: Bot, chat_id: int, message_id: int, orde
     await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=kb.as_markup())
 
 async def _display_edit_customer_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
-    """Показує меню редагування даних клієнта."""
     order = await session.get(Order, order_id)
     if not order: return
-
     text = (f"<b>Редагування клієнта (Замовлення #{order.id})</b>\n\n"
             f"<b>Поточне ім'я:</b> {html_module.escape(order.customer_name)}\n"
             f"<b>Поточний телефон:</b> {html_module.escape(order.phone_number)}")
-
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="Змінити ім'я", callback_data=f"change_name_start_{order_id}"),
            InlineKeyboardButton(text="Змінити телефон", callback_data=f"change_phone_start_{order_id}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order_id}"))
-
-    await bot.edit_message_text(
-        text=text,
-        chat_id=chat_id,
-        message_id=message_id,
-        reply_markup=kb.as_markup()
-    )
+    await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=kb.as_markup())
 
 async def _display_edit_delivery_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
-    """Показує меню редагування доставки/самовивозу."""
     order = await session.get(Order, order_id)
     if not order: return
-
     delivery_type_str = "🚚 Доставка" if order.is_delivery else "🏠 Самовивіз"
     text = (f"<b>Редагування доставки (Замовлення #{order.id})</b>\n\n"
             f"<b>Тип:</b> {delivery_type_str}\n"
             f"<b>Адреса:</b> {html_module.escape(order.address or 'Не вказана')}\n"
             f"<b>Час:</b> {html_module.escape(order.delivery_time or 'Якнайшвидше')}")
-
     kb = InlineKeyboardBuilder()
     toggle_text = "Зробити Самовивозом" if order.is_delivery else "Зробити Доставкою"
     kb.row(InlineKeyboardButton(text=toggle_text, callback_data=f"toggle_delivery_type_{order.id}"))
     if order.is_delivery:
         kb.row(InlineKeyboardButton(text="Змінити адресу", callback_data=f"change_address_start_{order.id}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order.id}"))
-
-    await bot.edit_message_text(
-        text=text,
-        chat_id=chat_id,
-        message_id=message_id,
-        reply_markup=kb.as_markup()
-    )
+    await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=kb.as_markup())
 
 
 def register_admin_handlers(dp: Dispatcher):
-    # Логіку входу оператора видалено, оскільки вона тепер у courier_handlers.py
     
     @dp.callback_query(F.data.startswith("change_order_status_"))
-    async def change_order_status_admin(callback: CallbackQuery, session: AsyncSession):
+    async def change_order_status_admin(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
         # Отримуємо екземпляр клієнтського бота для сповіщень
         client_bot = dp.get("client_bot")
         
-        employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == callback.from_user.id))
-        actor_info = f"Оператор: {employee.full_name}" if employee else f"Оператор (ID: {callback.from_user.id})"
+        user_id = callback.from_user.id
+        employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role)))
+        
+        if not employee:
+            return await callback.answer("Помилка авторизації.", show_alert=True)
+            
+        actor_info = f"Оператор: {employee.full_name}"
         
         parts = callback.data.split("_")
         order_id, new_status_id = int(parts[3]), int(parts[4])
 
-        order = await session.get(Order, order_id, options=[joinedload(Order.status)]) # Додано завантаження статусу
+        order = await session.get(Order, order_id, options=[joinedload(Order.status)])
         if not order: return await callback.answer("Замовлення не знайдено!", show_alert=True)
         if order.status_id == new_status_id: return await callback.answer("Статус вже встановлено.")
 
-        old_status = order.status
-        old_status_name = old_status.name if old_status else 'Невідомий'
+        # --- ПЕРЕВІРКА 0: Чи замовлення вже закрите? ---
+        # Якщо поточний статус є фінальним, забороняємо будь-які зміни
+        if order.status.is_completed_status or order.status.is_cancelled_status:
+             return await callback.answer("⛔️ Замовлення вже закрите (виконане/скасоване). Зміна статусу заборонена.", show_alert=True)
 
+        new_status = await session.get(OrderStatus, new_status_id)
+        if not new_status: return await callback.answer("Статус не знайдено в БД.", show_alert=True)
+
+        # --- ПЕРЕВІРКА 1: Заборона повторного списання (відправки на кухню) ---
+        # Якщо новий статус вимагає відправки на кухню, а замовлення ВЖЕ було списане (is_deducted)
+        if new_status.requires_kitchen_notify and order.is_deducted:
+             return await callback.answer("⛔️ Це замовлення вже було відправлено на виробництво (продукти списані). Повторна відправка заборонена.", show_alert=True)
+
+        # --- ПЕРЕВІРКА 2: Логіка скасування (Тільки адмін + причина) ---
+        if new_status.is_cancelled_status:
+            # Якщо замовлення вже було відправлено на кухню (списано)
+            if order.is_deducted:
+                # Перевіряємо права (чи це Адміністратор)
+                if employee.role.name != "Адміністратор":
+                     return await callback.answer("⛔️ Скасувати замовлення, що вже готується, може тільки Адміністратор!", show_alert=True)
+                
+                # Якщо це адмін, просимо причину
+                await state.update_data(order_id=order.id, new_status_id=new_status.id, actor_info=actor_info)
+                await state.set_state(AdminEditOrderStates.waiting_for_cancellation_reason)
+                
+                await callback.message.answer(f"📝 <b>Вкажіть причину скасування замовлення #{order.id}:</b>\n(Напишіть текст повідомлення)")
+                await callback.answer()
+                return # Перериваємо стандартний потік
+
+        # Стандартна зміна статусу (якщо не спрацювали блокування)
+        old_status_name = order.status.name if order.status else 'Невідомий'
         order.status_id = new_status_id
         
         history_entry = OrderStatusHistory(
@@ -206,7 +226,7 @@ def register_admin_handlers(dp: Dispatcher):
         
         await session.commit()
         
-        # Оновлене сповіщення з передачею client_bot
+        # Сповіщення
         await notify_all_parties_on_status_change(
             order=order,
             old_status_name=old_status_name,
@@ -219,6 +239,56 @@ def register_admin_handlers(dp: Dispatcher):
         await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
         await callback.answer(f"Статус замовлення #{order.id} змінено.")
 
+    # --- ОБРОБНИК ПРИЧИНИ СКАСУВАННЯ ---
+    @dp.message(AdminEditOrderStates.waiting_for_cancellation_reason)
+    async def process_cancellation_reason(message: Message, state: FSMContext, session: AsyncSession):
+        data = await state.get_data()
+        order_id = data.get('order_id')
+        new_status_id = data.get('new_status_id')
+        actor_info = data.get('actor_info')
+        reason = message.text
+        
+        # Очищаємо стан
+        await state.clear()
+        
+        order = await session.get(Order, order_id, options=[joinedload(Order.status)])
+        if not order:
+            await message.answer("Помилка: Замовлення не знайдено.")
+            return
+
+        # Ще одна перевірка, про всяк випадок
+        if order.status.is_completed_status or order.status.is_cancelled_status:
+            await message.answer("Помилка: Замовлення вже закрите.")
+            return
+
+        old_status_name = order.status.name if order.status else 'Невідомий'
+        
+        # Оновлюємо замовлення
+        order.status_id = new_status_id
+        order.cancellation_reason = reason # Зберігаємо причину
+        
+        history_entry = OrderStatusHistory(
+            order_id=order.id,
+            status_id=new_status_id,
+            actor_info=f"{actor_info} (Причина: {reason})"
+        )
+        session.add(history_entry)
+        
+        await session.commit()
+        
+        # Сповіщення
+        client_bot = dp.get("client_bot")
+        await notify_all_parties_on_status_change(
+            order=order,
+            old_status_name=old_status_name,
+            actor_info=f"{actor_info} (Скасування: {reason})",
+            admin_bot=message.bot,
+            client_bot=client_bot,
+            session=session
+        )
+        
+        await message.answer(f"✅ Замовлення #{order.id} скасовано.\nПричина: {html_module.escape(reason)}")
+
     @dp.callback_query(F.data.startswith("edit_order_"))
     async def show_edit_order_menu(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[2])
@@ -226,9 +296,10 @@ def register_admin_handlers(dp: Dispatcher):
         if not order: 
              return await callback.answer("Замовлення не знайдено!", show_alert=True)
         
+        # Заборона редагування завершених замовлень
         if order.status.is_completed_status or order.status.is_cancelled_status:
             return await callback.answer(
-                "Неможливо редагувати замовлення, яке вже виконано або скасовано.", 
+                "⛔️ Неможливо редагувати замовлення, яке вже виконано або скасовано.", 
                 show_alert=True
             )
         
@@ -250,20 +321,14 @@ def register_admin_handlers(dp: Dispatcher):
             return await callback.answer("Помилка: Замовлення не знайдено.", show_alert=True)
 
         if order.order_type == "in_house":
-            # Це замовлення офіціанта, викликаємо представлення офіціанта
             text, keyboard = await _generate_waiter_order_view(order, session)
             try:
                 await callback.message.edit_text(text, reply_markup=keyboard)
-            except TelegramBadRequest as e:
-                logger.warning(f"Error in back_to_order_view (waiter): {e}. Sending new message.")
-                try:
-                    await callback.message.delete()
-                    await callback.message.answer(text, reply_markup=keyboard)
-                except Exception as del_e:
-                     logger.error(f"Failed to send replacement message in back_to_order_view: {del_e}")
+            except TelegramBadRequest:
+                await callback.message.delete()
+                await callback.message.answer(text, reply_markup=keyboard)
             await callback.answer()
         else:
-            # Це замовлення на доставку/самовивіз, викликаємо звичайне адмін-представлення
             await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
             await callback.answer()
 
@@ -336,6 +401,14 @@ def register_admin_handlers(dp: Dispatcher):
         product = await session.get(Product, product_id)
         if not order or not product: return await callback.answer("Помилка!", show_alert=True)
 
+        # Якщо замовлення вже списане, не дозволяємо змінювати склад без попереднього скасування/повернення
+        if order.is_deducted:
+             return await callback.answer("🚫 Товари вже списані. Редагування складу заборонено.", show_alert=True)
+        
+        # Додаткова перевірка на закритий статус
+        if order.status.is_completed_status or order.status.is_cancelled_status:
+             return await callback.answer("🚫 Замовлення закрите. Редагування заборонено.", show_alert=True)
+
         products_dict = parse_products_string(order.products)
         if "change_qnt" in callback.data:
             new_quantity = products_dict.get(product.name, 0) + int(parts[5])
@@ -389,6 +462,13 @@ def register_admin_handlers(dp: Dispatcher):
         order = await session.get(Order, order_id)
         product = await session.get(Product, product_id)
         if not order or not product: return await callback.answer("Помилка!", show_alert=True)
+        
+        if order.is_deducted:
+             return await callback.answer("🚫 Товари вже списані. Редагування складу заборонено.", show_alert=True)
+        
+        if order.status.is_completed_status or order.status.is_cancelled_status:
+             return await callback.answer("🚫 Замовлення закрите. Редагування заборонено.", show_alert=True)
+
         products_dict = parse_products_string(order.products)
         products_dict[product.name] = products_dict.get(product.name, 0) + 1
         order.products = build_products_string(products_dict)
@@ -435,7 +515,7 @@ def register_admin_handlers(dp: Dispatcher):
         
         if order.status.is_completed_status or order.status.is_cancelled_status:
              return await callback.answer(
-                "Неможливо призначити кур'єра на замовлення, яке вже виконано або скасовано.", 
+                "⛔️ Неможливо призначити кур'єра на замовлення, яке вже виконано або скасовано.", 
                 show_alert=True
             )
 

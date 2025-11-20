@@ -1,6 +1,6 @@
 # templates.py
 
-# Замініть стару змінну ADMIN_HTML_TEMPLATE на цю:
+# Головний шаблон адмінки з меню
 ADMIN_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -174,6 +174,8 @@ ADMIN_HTML_TEMPLATE = """
         button:hover, .button:hover {{ background-color: var(--primary-hover-color); }}
         .button.secondary {{ background-color: #6b7280; }}
         .button.secondary:hover {{ background-color: #4b5563; }}
+        .button.danger {{ background-color: #ef4444; }}
+        .button.danger:hover {{ background-color: #dc2626; }}
         .button-sm {{
             display: inline-block; padding: 0.4rem 0.6rem; 
             border-radius: 0.3rem; text-decoration: none; color: white !important;
@@ -253,7 +255,12 @@ ADMIN_HTML_TEMPLATE = """
             <a href="/admin/orders" class="{orders_active}"><i class="fa-solid fa-box-archive"></i> Замовлення</a>
             <a href="/admin/clients" class="{clients_active}"><i class="fa-solid fa-users-line"></i> Клієнти</a>
             <a href="/admin/tables" class="{tables_active}"><i class="fa-solid fa-chair"></i> Столики</a>
+            
+            <a href="/admin/cash" class="{reports_active}"><i class="fa-solid fa-cash-register"></i> 💰 Каса</a>
+            
             <a href="/admin/products" class="{products_active}"><i class="fa-solid fa-burger"></i> Страви</a>
+            <a href="/admin/inventory" class="{products_active}"><i class="fa-solid fa-boxes-stacked"></i> Склад</a>
+            
             <a href="/admin/categories" class="{categories_active}"><i class="fa-solid fa-folder-open"></i> Категорії</a>
             <a href="/admin/menu" class="{menu_active}"><i class="fa-solid fa-file-lines"></i> Сторінки меню</a>
             <a href="/admin/employees" class="{employees_active}"><i class="fa-solid fa-users"></i> Співробітники</a>
