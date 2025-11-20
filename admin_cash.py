@@ -2,6 +2,7 @@
 
 import html
 from datetime import datetime
+from decimal import Decimal
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,8 +153,8 @@ async def cash_history(session: AsyncSession = Depends(get_db_session), username
     
     rows = ""
     for s in shifts:
-        # Різниця (нестача/надлишок)
-        # Теоретичний залишок в кінці = (start + cash_sales + in - out)
+        # Розрахунок теоретичного залишку
+        # Всі поля в моделі CashShift тепер Numeric (Decimal), тому операції безпечні
         theoretical = s.start_cash + s.total_sales_cash + s.service_in - s.service_out
         diff = s.end_cash_actual - theoretical
         
@@ -302,4 +303,4 @@ async def web_close_shift(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
         
-    return RedirectResponse("/admin/cash/history", status_code=303) # Перенаправляємо на історію
+    return RedirectResponse("/admin/cash/history", status_code=303)

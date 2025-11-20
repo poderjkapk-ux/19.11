@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import event, text, func, ForeignKey
+from sqlalchemy import event, text, func, ForeignKey, Numeric
 from typing import Optional, List
 from datetime import datetime
 import secrets
@@ -84,7 +84,7 @@ class Product(Base):
     name: Mapped[str] = mapped_column(sa.String(100))
     description: Mapped[str] = mapped_column(sa.String(500), nullable=True)
     image_url: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-    price: Mapped[int] = mapped_column()
+    price: Mapped[int] = mapped_column() # Ціна продажу зазвичай ціле число (грн), можна залишити int
     is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("true"))
     category_id: Mapped[int] = mapped_column(sa.ForeignKey('categories.id'))
     category: Mapped["Category"] = relationship("Category", back_populates="products")
@@ -120,14 +120,15 @@ class CashShift(Base):
     start_time: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now())
     end_time: Mapped[Optional[datetime]] = mapped_column(sa.DateTime, nullable=True)
     
-    start_cash: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Залишок на початок зміни")
-    end_cash_actual: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True, comment="Фактичний залишок при закритті")
+    # Використовуємо Numeric для грошей
+    start_cash: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Залишок на початок зміни")
+    end_cash_actual: Mapped[Optional[float]] = mapped_column(sa.Numeric(10, 2), nullable=True, comment="Фактичний залишок при закритті")
     
     # Поля для Z-звіту (фіксуються при закритті)
-    total_sales_cash: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Продажі готівкою")
-    total_sales_card: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Продажі карткою")
-    service_in: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Службове внесення")
-    service_out: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Службове вилучення/Інкасація")
+    total_sales_cash: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Продажі готівкою")
+    total_sales_card: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Продажі карткою")
+    service_in: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Службове внесення")
+    service_out: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Службове вилучення/Інкасація")
     
     is_closed: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     
@@ -141,7 +142,7 @@ class CashTransaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     shift_id: Mapped[int] = mapped_column(sa.ForeignKey('cash_shifts.id'), nullable=False)
     
-    amount: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    amount: Mapped[float] = mapped_column(sa.Numeric(10, 2), nullable=False)
     transaction_type: Mapped[str] = mapped_column(sa.String(20), nullable=False, comment="'in' - внесення, 'out' - вилучення")
     comment: Mapped[str] = mapped_column(sa.String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now())
@@ -254,8 +255,10 @@ class Ingredient(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(sa.String(100), nullable=False, unique=True)
     unit: Mapped[str] = mapped_column(sa.String(20), default='кг', comment="Одиниця виміру: кг, л, шт, г")
-    stock_quantity: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Поточний залишок")
-    price_per_unit: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Середня собівартість за одиницю")
+    # Numeric(10, 3) для точності ваги (наприклад 0.005 кг)
+    stock_quantity: Mapped[float] = mapped_column(sa.Numeric(10, 3), default=0.0, comment="Поточний залишок")
+    # Numeric(10, 2) для ціни
+    price_per_unit: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Середня собівартість за одиницю")
     product_links: Mapped[list["ProductIngredient"]] = relationship("ProductIngredient", back_populates="ingredient", cascade="all, delete-orphan")
 
 class ProductIngredient(Base):
@@ -264,7 +267,7 @@ class ProductIngredient(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(sa.ForeignKey('products.id'), nullable=False)
     ingredient_id: Mapped[int] = mapped_column(sa.ForeignKey('ingredients.id'), nullable=False)
-    quantity: Mapped[float] = mapped_column(sa.Float, nullable=False, comment="Кількість на 1 порцію")
+    quantity: Mapped[float] = mapped_column(sa.Numeric(10, 3), nullable=False, comment="Кількість на 1 порцію")
     product: Mapped["Product"] = relationship("Product", backref="ingredients_list")
     ingredient: Mapped["Ingredient"] = relationship("Ingredient", back_populates="product_links")
 
@@ -274,7 +277,7 @@ class Supply(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now())
     comment: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-    total_cost: Mapped[float] = mapped_column(sa.Float, default=0.0)
+    total_cost: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0)
     items: Mapped[list["SupplyItem"]] = relationship("SupplyItem", back_populates="supply", cascade="all, delete-orphan")
 
 class SupplyItem(Base):
@@ -282,8 +285,8 @@ class SupplyItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     supply_id: Mapped[int] = mapped_column(sa.ForeignKey('supplies.id'), nullable=False)
     ingredient_id: Mapped[int] = mapped_column(sa.ForeignKey('ingredients.id'), nullable=False)
-    quantity: Mapped[float] = mapped_column(sa.Float, nullable=False)
-    price: Mapped[float] = mapped_column(sa.Float, nullable=False, comment="Ціна закупки за всю кількість")
+    quantity: Mapped[float] = mapped_column(sa.Numeric(10, 3), nullable=False)
+    price: Mapped[float] = mapped_column(sa.Numeric(10, 2), nullable=False, comment="Ціна закупки за всю кількість")
     supply: Mapped["Supply"] = relationship("Supply", back_populates="items")
     ingredient: Mapped["Ingredient"] = relationship("Ingredient")
 
@@ -294,7 +297,7 @@ class WriteOff(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now())
     reason: Mapped[str] = mapped_column(sa.String(100), nullable=False, comment="Причина списання")
     comment: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-    total_loss: Mapped[float] = mapped_column(sa.Float, default=0.0, comment="Сума збитків")
+    total_loss: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Сума збитків")
     items: Mapped[list["WriteOffItem"]] = relationship("WriteOffItem", back_populates="write_off", cascade="all, delete-orphan")
 
 class WriteOffItem(Base):
@@ -302,8 +305,8 @@ class WriteOffItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     write_off_id: Mapped[int] = mapped_column(sa.ForeignKey('write_offs.id'), nullable=False)
     ingredient_id: Mapped[int] = mapped_column(sa.ForeignKey('ingredients.id'), nullable=False)
-    quantity: Mapped[float] = mapped_column(sa.Float, nullable=False)
-    cost_at_moment: Mapped[float] = mapped_column(sa.Float, nullable=False, comment="Собівартість на момент списання")
+    quantity: Mapped[float] = mapped_column(sa.Numeric(10, 3), nullable=False)
+    cost_at_moment: Mapped[float] = mapped_column(sa.Numeric(10, 2), nullable=False, comment="Собівартість на момент списання")
     write_off: Mapped["WriteOff"] = relationship("WriteOff", back_populates="items")
     ingredient: Mapped["Ingredient"] = relationship("Ingredient")
 

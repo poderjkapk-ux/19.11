@@ -9,25 +9,12 @@ from sqlalchemy import select
 from models import Order, Settings, OrderStatus, Employee, Role, Product
 # --- СКЛАД: Імпорт сервісу списання ---
 from inventory_service import deduct_ingredients_for_order
+# --- UTILS: Імпорт загальної функції парсинга ---
+from utils import parse_products_str
 
 logger = logging.getLogger(__name__)
 
-def _parse_products_str(products_str: str) -> dict:
-    """
-    Парсить рядок продуктів у словник {'Назва': кількість}.
-    Формат: 'Назва x 1, Назва 2 x 2'
-    """
-    if not products_str:
-        return {}
-    result = {}
-    for part in products_str.split(", "):
-        try:
-            if " x " in part:
-                name, qty = part.rsplit(" x ", 1)
-                result[name.strip()] = int(qty)
-        except ValueError:
-            continue
-    return result
+# _parse_products_str ВИДАЛЕНО (використовується utils.parse_products_str)
 
 async def notify_new_order_to_staff(admin_bot: Bot, order: Order, session: AsyncSession):
     """
@@ -114,8 +101,8 @@ async def distribute_order_to_production(bot: Bot, order: Order, session: AsyncS
     """
     Розподіляє товари замовлення між Кухнею та Баром і надсилає відповідним працівникам.
     """
-    # 1. Парсимо товари
-    products_map = _parse_products_str(order.products)
+    # 1. Парсимо товари (використовуємо utils)
+    products_map = parse_products_str(order.products)
     if not products_map:
         return
 

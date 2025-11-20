@@ -21,6 +21,8 @@ from courier_handlers import _generate_waiter_order_view
 from notification_manager import notify_all_parties_on_status_change
 # --- КАСА: Імпорт функції прив'язки ---
 from cash_service import link_order_to_shift
+# --- UTILS: Імпорт загальної функції парсинга ---
+from utils import parse_products_str
 
 logger = logging.getLogger(__name__)
 
@@ -30,16 +32,7 @@ class AdminEditOrderStates(StatesGroup):
     waiting_for_new_address = State()
     waiting_for_cancellation_reason = State()
 
-def parse_products_string(products_str: str) -> dict[str, int]:
-    if not products_str: return {}
-    products_dict = {}
-    for part in products_str.split(', '):
-        try:
-            name, quantity_str = part.rsplit(' x ', 1)
-            products_dict[name] = int(quantity_str)
-        except ValueError:
-            continue
-    return products_dict
+# parse_products_string ВИДАЛЕНО (використовується utils.parse_products_str)
 
 def build_products_string(products_dict: dict[str, int]) -> str:
     return ", ".join([f"{name} x {quantity}" for name, quantity in products_dict.items()])
@@ -107,11 +100,11 @@ async def _display_order_view(bot: Bot, chat_id: int, message_id: int, order_id:
     except TelegramBadRequest as e:
         logger.error(f"Не вдалося відредагувати повідомлення в _display_order_view: {e}")
 
-# ... (Функції _display_edit_items_menu та інші - скорочено, вони такі ж як були) ...
 async def _display_edit_items_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
     order = await session.get(Order, order_id)
     if not order: return
-    products_dict = parse_products_string(order.products)
+    # Використовуємо нову функцію
+    products_dict = parse_products_str(order.products)
     text = f"<b>Склад замовлення #{order.id}</b> (Сума: {order.total_price} грн)\n\n"
     kb = InlineKeyboardBuilder()
     if not products_dict:
@@ -203,10 +196,8 @@ def register_admin_handlers(dp: Dispatcher):
                 return
 
         # --- КАСА: АВТОМАТИЧНА ПРИВ'ЯЗКА ПРИ ОПЛАТІ ---
-        # Якщо статус фінальний (виконаний), вважаємо, що гроші в касі
         if new_status.is_completed_status:
             await link_order_to_shift(session, order, employee.id)
-            # Якщо оплата картою, можна додати логіку для звірки з терміналом
         
         old_status_name = order.status.name if order.status else 'Невідомий'
         order.status_id = new_status_id
@@ -274,16 +265,6 @@ def register_admin_handlers(dp: Dispatcher):
         )
         
         await message.answer(f"✅ Замовлення #{order.id} скасовано.")
-
-    # ... (Інші хендлери: edit_order, view_order, edit_customer, edit_items, edit_delivery, start_fsm_for_edit, process_fsm_for_edit, admin_modify_item, toggle_delivery_type, admin_add_item_start, admin_show_category, admin_add_to_order, select_courier_start, assign_courier - вони залишаються без змін, як у попередніх версіях) ...
-    # Щоб не роздувати відповідь, я їх не дублюю, бо вони не зачіпають логіку каси, 
-    # окрім відображення кнопок, які вже є в _display_order_view.
-    
-    # Для повноцінної роботи, переконайтеся, що у вас є решта хендлерів з минулого файлу admin_handlers.py.
-    # Якщо ви копіюєте цей файл, вам потрібно додати сюди решту функцій (edit_order_... і т.д.) з попередньої версії.
-    
-    # ... (Код з попереднього admin_handlers.py починаючи з рядка 223) ...
-    # ... (Я додаю їх сюди для повноти) ...
 
     @dp.callback_query(F.data.startswith("edit_order_"))
     async def show_edit_order_menu(callback: CallbackQuery, session: AsyncSession):
@@ -387,7 +368,8 @@ def register_admin_handlers(dp: Dispatcher):
         if order.is_deducted: return await callback.answer("🚫 Товари вже списані.", show_alert=True)
         if order.status.is_completed_status or order.status.is_cancelled_status: return await callback.answer("🚫 Замовлення закрите.", show_alert=True)
 
-        products_dict = parse_products_string(order.products)
+        # Використовуємо нову функцію
+        products_dict = parse_products_str(order.products)
         if "change_qnt" in callback.data:
             new_quantity = products_dict.get(product.name, 0) + int(parts[5])
             if new_quantity > 0: products_dict[product.name] = new_quantity
@@ -443,7 +425,8 @@ def register_admin_handlers(dp: Dispatcher):
         if order.is_deducted: return await callback.answer("🚫 Товари вже списані.", show_alert=True)
         if order.status.is_completed_status or order.status.is_cancelled_status: return await callback.answer("🚫 Замовлення закрите.", show_alert=True)
 
-        products_dict = parse_products_string(order.products)
+        # Використовуємо нову функцію
+        products_dict = parse_products_str(order.products)
         products_dict[product.name] = products_dict.get(product.name, 0) + 1
         order.products = build_products_string(products_dict)
         order.total_price = await recalculate_order_total(products_dict, session)

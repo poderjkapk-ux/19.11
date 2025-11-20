@@ -4,6 +4,8 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models import Product, Ingredient, ProductIngredient, Order, WriteOff, WriteOffItem
+# --- UTILS: Імпорт загальної функції парсинга ---
+from utils import parse_products_str
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +17,8 @@ async def deduct_ingredients_for_order(session: AsyncSession, order: Order) -> l
         logger.info(f"Замовлення #{order.id} вже списане. Пропускаємо.")
         return []
 
-    if not order.products:
-        return []
-
-    products_map = {}
-    for part in order.products.split(", "):
-        try:
-            if " x " in part:
-                name, qty = part.rsplit(" x ", 1)
-                products_map[name.strip()] = int(qty)
-        except ValueError:
-            continue
+    # Використовуємо загальну функцію парсинга з utils.py
+    products_map = parse_products_str(order.products)
 
     if not products_map:
         return []
@@ -55,12 +48,15 @@ async def deduct_ingredients_for_order(session: AsyncSession, order: Order) -> l
             if not ingredient:
                 continue
             
-            total_needed = link.quantity * qty_ordered
+            total_needed = float(link.quantity) * qty_ordered
             
-            if ingredient.stock_quantity < total_needed:
-                warnings.append(f"⚠️ Нестача: {ingredient.name}. На залишку {ingredient.stock_quantity:.3f} {ingredient.unit}, потрібно {total_needed:.3f} {ingredient.unit}. (Пішло в мінус)")
+            # Перевірка на нестачу (але списуємо все одно, йдучи в мінус)
+            if float(ingredient.stock_quantity) < total_needed:
+                warnings.append(f"⚠️ Нестача: {ingredient.name}. На залишку {float(ingredient.stock_quantity):.3f} {ingredient.unit}, потрібно {total_needed:.3f} {ingredient.unit}. (Пішло в мінус)")
 
-            ingredient.stock_quantity -= total_needed
+            # Оновлюємо залишок (Numeric підтримує віднімання float, але краще привести типи якщо виникають помилки)
+            # SQLAlchemy зазвичай справляється, але для надійності перетворюємо
+            ingredient.stock_quantity = float(ingredient.stock_quantity) - total_needed
 
     order.is_deducted = True
     return warnings
@@ -77,8 +73,8 @@ async def add_supply_items(session: AsyncSession, items_data: list):
             qty = float(item['quantity'])
             price_total = float(item['price'])
             
-            current_stock_for_calc = max(0, ingredient.stock_quantity) 
-            current_value = current_stock_for_calc * ingredient.price_per_unit
+            current_stock_for_calc = max(0, float(ingredient.stock_quantity)) 
+            current_value = current_stock_for_calc * float(ingredient.price_per_unit)
             
             new_stock_for_calc = current_stock_for_calc + qty
             new_total_value = current_value + price_total
@@ -86,7 +82,7 @@ async def add_supply_items(session: AsyncSession, items_data: list):
             if new_stock_for_calc > 0:
                 ingredient.price_per_unit = new_total_value / new_stock_for_calc
             
-            ingredient.stock_quantity += qty
+            ingredient.stock_quantity = float(ingredient.stock_quantity) + qty
 
 async def process_manual_write_off(session: AsyncSession, reason: str, comment: str, items_data: list):
     """
@@ -106,11 +102,11 @@ async def process_manual_write_off(session: AsyncSession, reason: str, comment: 
         ingredient = await session.get(Ingredient, ingredient_id)
         if ingredient:
             # Рахуємо вартість списання по поточній собівартості
-            cost = quantity * ingredient.price_per_unit
+            cost = quantity * float(ingredient.price_per_unit)
             total_loss += cost
             
             # Зменшуємо залишок
-            ingredient.stock_quantity -= quantity
+            ingredient.stock_quantity = float(ingredient.stock_quantity) - quantity
             
             # Додаємо запис в деталі акту
             session.add(WriteOffItem(

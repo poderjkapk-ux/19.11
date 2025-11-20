@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import joinedload
 
-# Додано Settings
 from models import Order, OrderStatusHistory, Employee, Settings
 from templates import ADMIN_HTML_TEMPLATE, ADMIN_CLIENTS_LIST_BODY, ADMIN_CLIENT_DETAIL_BODY
 from dependencies import get_db_session, check_credentials
@@ -22,8 +21,10 @@ async def admin_clients_list(
     username: str = Depends(check_credentials)
 ):
     """Відображає сторінку клієнтів з можливістю пошуку та пагінації."""
-    # NEW: Отримуємо налаштування
-    settings = await session.get(Settings, 1) or Settings()
+    settings = await session.get(Settings, 1)
+    if not settings:
+        settings = Settings()
+
     per_page = 20
     offset = (page - 1) * per_page
 
@@ -72,7 +73,7 @@ async def admin_clients_list(
 
     rows = "".join([f"""
     <tr>
-        <td><a href="/admin/client/{c['phone_number']}">{html.escape(c['customer_name'])}</a></td>
+        <td><a href="/admin/client/{c['phone_number']}">{html.escape(c['customer_name'] or 'Не вказано')}</a></td>
         <td>{html.escape(c['phone_number'])}</td>
         <td>{c['order_count']}</td>
         <td>{c['total_spent']} грн</td>
@@ -81,7 +82,7 @@ async def admin_clients_list(
         </td>
     </tr>""" for c in clients])
 
-    # --- ВИПРАВЛЕННЯ Пагінації ---
+    # Пагінація
     links = []
     for i in range(1, pages + 1):
         search_part = f'&search={q}' if q else ''
@@ -89,7 +90,6 @@ async def admin_clients_list(
         links.append(f'<a href="/admin/clients?page={i}{search_part}" class="{class_part}">{i}</a>')
     
     pagination = f"<div class='pagination'>{' '.join(links)}</div>"
-    # --- КІНЕЦЬ ВИПРАВЛЕННЯ ---
 
     body = ADMIN_CLIENTS_LIST_BODY.format(
         search_query=q or '',
@@ -103,7 +103,7 @@ async def admin_clients_list(
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(
         title="Клієнти", 
         body=body, 
-        site_title=settings.site_title or "Назва", # <-- Використання site_title
+        site_title=settings.site_title or "Назва",
         **active_classes
     ))
 
@@ -115,7 +115,9 @@ async def admin_client_detail(
     username: str = Depends(check_credentials)
 ):
     """Відображає детальну інформацію про клієнта та його історію замовлень."""
-    settings = await session.get(Settings, 1) or Settings()
+    settings = await session.get(Settings, 1)
+    if not settings:
+        settings = Settings()
     
     orders_res = await session.execute(
         select(Order)
@@ -135,7 +137,7 @@ async def admin_client_detail(
 
     # Деталі клієнта з останнього замовлення
     latest_order = orders[0]
-    client_name = latest_order.customer_name
+    client_name = latest_order.customer_name or "Невідомий"
     client_address = latest_order.address
 
     # Загальна статистика
@@ -152,11 +154,13 @@ async def admin_client_detail(
             history_log += f"<li><b>{h.status.name}</b> ({html.escape(h.actor_info)}) - {timestamp}</li>"
         history_log += "</ul>"
         
+        status_name = o.status.name if o.status else "Невідомий"
+
         order_rows.append(f"""
         <tr class="order-summary-row" onclick="toggleDetails(this)">
             <td>#{o.id}</td>
             <td>{o.created_at.strftime('%d.%m.%Y %H:%M')}</td>
-            <td><span class='status'>{o.status.name}</span></td>
+            <td><span class='status'>{status_name}</span></td>
             <td>{o.total_price} грн</td>
             <td>{completed_by}</td>
             <td><i class="fa-solid fa-chevron-down"></i></td>
@@ -189,6 +193,6 @@ async def admin_client_detail(
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(
         title=f"Клієнт: {html.escape(client_name)}", 
         body=body, 
-        site_title=settings.site_title or "Назва", # <-- Використання site_title
+        site_title=settings.site_title or "Назва",
         **active_classes
     ))

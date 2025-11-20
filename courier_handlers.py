@@ -19,6 +19,8 @@ import os
 
 from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table, Category, Product
 from notification_manager import notify_new_order_to_staff, notify_all_parties_on_status_change
+# --- UTILS: Импорт общей функции парсинга ---
+from utils import parse_products_str
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +81,8 @@ async def _get_filtered_order_text(session: AsyncSession, order: Order, area: st
     if not order.products:
         return ""
 
-    # 1. Розбираємо рядок продуктів
-    items_map = {}
-    for part in order.products.split(", "):
-        if " x " in part:
-            try:
-                name, qty = part.rsplit(" x ", 1)
-                items_map[name.strip()] = qty
-            except ValueError: continue
+    # 1. Розбираємо рядок продуктів через утиліту
+    items_map = parse_products_str(order.products)
 
     if not items_map:
         return ""
@@ -882,6 +878,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         
         await callback.answer(f"Замовлення #{order.id} створено!")
         
+        # Тут використовується збережений у dp екземпляр бота
         admin_bot = dp_admin.get("bot_instance")
         if admin_bot:
             await notify_new_order_to_staff(admin_bot, order, session)

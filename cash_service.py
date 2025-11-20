@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from models import CashShift, CashTransaction, Order
@@ -31,10 +32,11 @@ async def open_new_shift(session: AsyncSession, employee_id: int, start_cash: fl
     if active_shift:
         raise ValueError("У цього співробітника вже є відкрита зміна.")
 
+    # Перетворюємо start_cash на Decimal для сумісності з БД
     new_shift = CashShift(
         employee_id=employee_id,
         start_time=datetime.now(),
-        start_cash=start_cash,
+        start_cash=Decimal(str(start_cash)),
         is_closed=False
     )
     session.add(new_shift)
@@ -83,14 +85,16 @@ async def get_shift_statistics(session: AsyncSession, shift_id: int):
     sales_res = await session.execute(sales_query)
     sales_data = sales_res.all()
 
-    total_cash_sales = 0.0
-    total_card_sales = 0.0
+    # Використовуємо Decimal для уникнення помилок TypeError при додаванні до shift.start_cash (який є Decimal)
+    total_cash_sales = Decimal(0)
+    total_card_sales = Decimal(0)
 
     for method, amount in sales_data:
+        amount_decimal = Decimal(amount) if amount else Decimal(0)
         if method == 'cash':
-            total_cash_sales += (amount or 0)
+            total_cash_sales += amount_decimal
         elif method == 'card':
-            total_card_sales += (amount or 0)
+            total_card_sales += amount_decimal
 
     # 2. Службові операції
     trans_query = select(
@@ -103,21 +107,26 @@ async def get_shift_statistics(session: AsyncSession, shift_id: int):
     trans_res = await session.execute(trans_query)
     trans_data = trans_res.all()
 
-    service_in = 0.0
-    service_out = 0.0
+    service_in = Decimal(0)
+    service_out = Decimal(0)
 
     for t_type, amount in trans_data:
+        amount_decimal = Decimal(amount) if amount else Decimal(0)
         if t_type == 'in':
-            service_in += (amount or 0)
+            service_in += amount_decimal
         elif t_type == 'out':
-            service_out += (amount or 0)
+            service_out += amount_decimal
 
-    theoretical_cash = shift.start_cash + total_cash_sales + service_in - service_out
+    # Розрахунок теоретичної готівки:
+    # Початок + Продажі Готівкою + Внесення - Вилучення
+    # (Картка не впливає на готівку в касі)
+    start_cash_decimal = shift.start_cash if shift.start_cash is not None else Decimal(0)
+    theoretical_cash = start_cash_decimal + total_cash_sales + service_in - service_out
 
     return {
         "shift_id": shift.id,
         "start_time": shift.start_time,
-        "start_cash": shift.start_cash,
+        "start_cash": start_cash_decimal,
         "total_sales_cash": total_cash_sales,
         "total_sales_card": total_card_sales,
         "total_sales": total_cash_sales + total_card_sales,
@@ -135,7 +144,8 @@ async def close_active_shift(session: AsyncSession, shift_id: int, end_cash_actu
     stats = await get_shift_statistics(session, shift_id)
     
     shift.end_time = datetime.now()
-    shift.end_cash_actual = end_cash_actual
+    # Конвертуємо float в Decimal
+    shift.end_cash_actual = Decimal(str(end_cash_actual))
     
     shift.total_sales_cash = stats['total_sales_cash']
     shift.total_sales_card = stats['total_sales_card']
@@ -150,7 +160,7 @@ async def add_shift_transaction(session: AsyncSession, shift_id: int, amount: fl
     """Додає транзакцію."""
     tx = CashTransaction(
         shift_id=shift_id,
-        amount=amount,
+        amount=Decimal(str(amount)), # Конвертація
         transaction_type=t_type,
         comment=comment
     )

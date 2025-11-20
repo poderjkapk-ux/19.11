@@ -8,10 +8,9 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload, selectinload
-from typing import List, Optional # <--- Додано List, Optional
+from sqlalchemy.orm import selectinload
 
-from models import Table, Employee, Role, Settings # <-- NEW: Import Settings
+from models import Table, Employee, Role, Settings
 from templates import ADMIN_HTML_TEMPLATE, ADMIN_TABLES_BODY
 from dependencies import get_db_session, check_credentials
 
@@ -24,12 +23,10 @@ async def admin_tables_list(
     username: str = Depends(check_credentials)
 ):
     """Відображає сторінку управління столиками."""
-    # NEW: Отримуємо налаштування
     settings = await session.get(Settings, 1) or Settings()
     
     tables_res = await session.execute(
         select(Table).options(
-            # ЗМІНЕНО: Використовуємо selectinload для M2M
             selectinload(Table.assigned_waiters)
         ).order_by(Table.name)
     )
@@ -53,12 +50,10 @@ async def admin_tables_list(
 
     rows = []
     for table in tables:
-        # ЗМІНЕНО: Виводимо список офіціантів
         waiter_names = ", ".join([html.escape(w.full_name) for w in table.assigned_waiters])
         if not waiter_names:
             waiter_names = "<i>Не призначено</i>"
 
-        # ЗМІНЕНО: Передаємо список ID призначених офіціантів у модальне вікно
         assigned_waiter_ids = json.dumps([w.id for w in table.assigned_waiters])
 
         rows.append(f"""
@@ -77,15 +72,13 @@ async def admin_tables_list(
 
     body = ADMIN_TABLES_BODY.format(rows="".join(rows) or "<tr><td colspan='5'>Столиків ще не додано.</td></tr>")
 
-    # NEW: Додано "design_active"
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active", "design_active"]}
     active_classes["tables_active"] = "active"
 
-    # ЗМІНЕНО: Заголовок став більш загальним
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(
         title="Столики", 
         body=body, 
-        site_title=settings.site_title or "Назва", # <-- NEW
+        site_title=settings.site_title or "Назва",
         **active_classes
     ))
 
@@ -96,7 +89,6 @@ async def add_table(
     username: str = Depends(check_credentials)
 ):
     """Додає новий столик."""
-    # access_token згенерується автоматично завдяки default= у моделі
     new_table = Table(name=name)
     session.add(new_table)
     await session.commit()
@@ -115,36 +107,39 @@ async def delete_table(
         await session.commit()
     return RedirectResponse(url="/admin/tables", status_code=303)
 
-# ПОВНІСТЮ ОНОВЛЕНИЙ ЕНДПОІНТ
 @router.post("/admin/tables/assign_waiter/{table_id}")
 async def assign_waiter_to_table(
     table_id: int,
-    # Приймаємо список ID з форми
-    waiter_ids: Optional[List[int]] = Form(None),
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
-    """Призначає кількох офіціантів на столик."""
-    # Використовуємо selectinload для завантаження поточного списку офіціантів
+    """
+    Призначає кількох офіціантів на столик.
+    Використовує request.form() для надійної обробки множинного вибору select.
+    """
     table = await session.get(Table, table_id, options=[selectinload(Table.assigned_waiters)])
     if not table:
         raise HTTPException(status_code=404, detail="Столик не знайдено")
 
-    # Якщо форма не передала жодного ID (наприклад, зняли виділення з усіх),
-    # `waiter_ids` буде None. Ініціалізуємо його як порожній список.
-    if waiter_ids is None:
+    # Отримуємо список ID з форми
+    form_data = await request.form()
+    # getlist повертає список рядків ['1', '2']
+    waiter_ids_str = form_data.getlist("waiter_ids")
+    
+    try:
+        waiter_ids = [int(x) for x in waiter_ids_str]
+    except ValueError:
         waiter_ids = []
 
     # Очищуємо поточний список
     table.assigned_waiters.clear()
 
     if waiter_ids:
-        # Отримуємо ID ролей офіціантів
         waiter_roles_res = await session.execute(select(Role.id).where(Role.can_serve_tables == True))
         waiter_role_ids = waiter_roles_res.scalars().all()
 
         if waiter_role_ids:
-            # Завантажуємо об'єкти Employee, які є офіціантами
             waiters_res = await session.execute(
                 select(Employee).where(
                     Employee.id.in_(waiter_ids),
@@ -153,7 +148,6 @@ async def assign_waiter_to_table(
             )
             waiters_to_assign = waiters_res.scalars().all()
 
-            # Додаємо нових офіціантів до списку
             for waiter in waiters_to_assign:
                 table.assigned_waiters.append(waiter)
 
@@ -161,14 +155,11 @@ async def assign_waiter_to_table(
     return RedirectResponse(url="/admin/tables", status_code=303)
 
 
-# --- Ендпоінт тепер приймає access_token ---
 @router.get("/qr/{access_token}")
 async def get_qr_code(request: Request, access_token: str):
     """Генерує та повертає QR-код для столика."""
-    base_url = str(request.base_url)
-
-    # --- URL тепер використовує access_token ---
-    url = f"{base_url}menu/table/{access_token}"
+    base_url = str(request.base_url).rstrip('/')
+    url = f"{base_url}/menu/table/{access_token}"
 
     img = qrcode.make(url)
     buf = io.BytesIO()

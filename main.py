@@ -47,19 +47,20 @@ from templates import (
     ADMIN_TABLES_BODY
 )
 from models import *
-from admin_handlers import register_admin_handlers, parse_products_string
+from admin_handlers import register_admin_handlers
 from courier_handlers import register_courier_handlers
 from notification_manager import notify_new_order_to_staff
 from admin_clients import router as clients_router
 from dependencies import get_db_session, check_credentials
+from utils import parse_products_str  # Використовуємо загальну функцію
 
 # --- ІМПОРТИ РОУТЕРІВ ---
 from admin_order_management import router as admin_order_router
 from admin_tables import router as admin_tables_router
 from in_house_menu import router as in_house_menu_router
 from admin_design_settings import router as admin_design_router
-from admin_inventory import router as admin_inventory_router # Склад
-from admin_cash import router as admin_cash_router # Каса
+from admin_inventory import router as admin_inventory_router
+from admin_cash import router as admin_cash_router
 # -----------------------------------------------
 
 # --- КОНФІГУРАЦІЯ ---
@@ -609,6 +610,7 @@ async def process_specific_time(message: Message, state: FSMContext, session: As
 async def finalize_order(message: Message, state: FSMContext, session: AsyncSession):
     data = await state.get_data()
     user_id = data.get('user_id')
+    # Використовуємо збережений екземпляр бота з dp
     admin_bot = dp_admin.get("bot_instance")
     
     order = Order(
@@ -642,23 +644,15 @@ async def finalize_order(message: Message, state: FSMContext, session: AsyncSess
     await state.clear()
     await command_start_handler(message, state, session)
 
-# --- Функція start_bot ---
-async def start_bot(client_dp: Dispatcher, admin_dp: Dispatcher):
+# --- Функція start_bot (ОНОВЛЕНА) ---
+async def start_bot(client_dp: Dispatcher, admin_dp: Dispatcher, client_bot: Bot, admin_bot: Bot):
     try:
-        # Читаємо токени напряму з змінних оточення
-        client_token = os.environ.get('CLIENT_BOT_TOKEN')
-        admin_token = os.environ.get('ADMIN_BOT_TOKEN')
-
-        if not all([client_token, admin_token]):
-            logging.warning("Токени CLIENT_BOT_TOKEN або ADMIN_BOT_TOKEN не встановлені в .env! Боти не будуть запущені.")
-            return
-
-        bot = Bot(token=client_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        admin_bot = Bot(token=admin_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-
-        admin_dp["client_bot"] = bot
+        # Зберігаємо ботів у workflow_data диспетчерів для доступу в хендлерах
+        admin_dp["client_bot"] = client_bot
         admin_dp["bot_instance"] = admin_bot
         client_dp["admin_bot_instance"] = admin_bot
+        
+        # Зберігаємо фабрику сесій
         client_dp["session_factory"] = async_session_maker
         admin_dp["session_factory"] = async_session_maker
 
@@ -673,32 +667,64 @@ async def start_bot(client_dp: Dispatcher, admin_dp: Dispatcher):
         admin_dp.callback_query.middleware(DbSessionMiddleware(session_pool=async_session_maker))
         admin_dp.message.middleware(DbSessionMiddleware(session_pool=async_session_maker))
 
-        await bot.delete_webhook(drop_pending_updates=True)
+        await client_bot.delete_webhook(drop_pending_updates=True)
         await admin_bot.delete_webhook(drop_pending_updates=True)
 
-        logging.info("Запускаємо ботів...")
+        logging.info("Запускаємо поллінг ботів...")
         await asyncio.gather(
-            client_dp.start_polling(bot),
+            client_dp.start_polling(client_bot),
             admin_dp.start_polling(admin_bot)
         )
     except Exception as e:
         logging.critical(f"Не вдалося запустити ботів: {e}", exc_info=True)
 # --- КІНЕЦЬ ОНОВЛЕННЯ start_bot ---
 
+# --- Lifespan (ОНОВЛЕНИЙ) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.info("Запуск...")
+    logging.info("Запуск додатка...")
     os.makedirs("static/images", exist_ok=True)
     os.makedirs("static/favicons", exist_ok=True)
+    
     await create_db_tables()
-    bot_task = asyncio.create_task(start_bot(dp, dp_admin))
+    
+    # Ініціалізація ботів ТУТ (Singleton)
+    client_token = os.environ.get('CLIENT_BOT_TOKEN')
+    admin_token = os.environ.get('ADMIN_BOT_TOKEN')
+    
+    client_bot = None
+    admin_bot = None
+    bot_task = None
+
+    if not all([client_token, admin_token]):
+        logging.warning("Токени CLIENT_BOT_TOKEN або ADMIN_BOT_TOKEN не встановлені в .env! Боти не будуть запущені.")
+    else:
+        try:
+            client_bot = Bot(token=client_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+            admin_bot = Bot(token=admin_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+            # Запускаємо завдання ботів, передаючи створені екземпляри
+            bot_task = asyncio.create_task(start_bot(dp, dp_admin, client_bot, admin_bot))
+        except Exception as e:
+             logging.error(f"Помилка при створенні ботів: {e}")
+
+    # Зберігаємо ботів у стані додатка для доступу з ендпоінтів FastAPI
+    app.state.client_bot = client_bot
+    app.state.admin_bot = admin_bot
+    
     yield
-    logging.info("Зупинка...")
-    bot_task.cancel()
-    try:
-        await bot_task
-    except asyncio.CancelledError:
-        logging.info("Завдання бота успішно скасовано.")
+    
+    logging.info("Зупинка додатка...")
+    if bot_task:
+        bot_task.cancel()
+        try:
+            await bot_task
+        except asyncio.CancelledError:
+            logging.info("Завдання бота успішно скасовано.")
+    
+    # Закриваємо сесії ботів
+    if client_bot: await client_bot.session.close()
+    if admin_bot: await admin_bot.session.close()
+
 
 app = FastAPI(lifespan=lifespan)
 os.makedirs("static", exist_ok=True)
@@ -854,7 +880,8 @@ async def place_web_order(order_data: dict = Body(...), session: AsyncSession = 
     await session.commit()
     await session.refresh(order)
 
-    admin_bot = dp_admin.get("bot_instance")
+    # Використовуємо збереженого бота
+    admin_bot = app.state.admin_bot
     if admin_bot:
         await notify_new_order_to_staff(admin_bot, order, session)
 
@@ -2117,7 +2144,8 @@ async def get_edit_order_form(order_id: int, session: AsyncSession = Depends(get
     order = await session.get(Order, order_id)
     if not order: raise HTTPException(404, "Замовлення не знайдено")
 
-    products_dict = parse_products_string(order.products)
+    # Використовуємо нову функцію з utils
+    products_dict = parse_products_str(order.products)
     initial_items = {}
     if products_dict:
         products_res = await session.execute(sa.select(Product).where(Product.name.in_(list(products_dict.keys()))))
@@ -2239,7 +2267,7 @@ async def _process_and_save_order(order: Order, data: dict, session: AsyncSessio
              await session.rollback() # Rollback history commit if it fails
 
 
-        admin_bot = dp_admin.get("bot_instance")
+        admin_bot = app.state.admin_bot
         if admin_bot:
             await notify_new_order_to_staff(admin_bot, order, session)
     else:

@@ -3,7 +3,7 @@
 import html
 import logging
 import os
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,39 +17,13 @@ from models import Order, OrderStatus, Employee, Role, OrderStatusHistory, Setti
 from templates import ADMIN_HTML_TEMPLATE, ADMIN_ORDER_MANAGE_BODY
 from dependencies import get_db_session, check_credentials
 from notification_manager import notify_all_parties_on_status_change
-
+from utils import parse_products_str
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-async def get_bot_instances(session: AsyncSession) -> tuple[Bot | None, Bot | None]:
-    """Допоміжна функція для отримання екземплярів ботів на основі змінних оточення."""
-    admin_bot_token = os.environ.get('ADMIN_BOT_TOKEN')
-    client_bot_token = os.environ.get('CLIENT_BOT_TOKEN')
-
-    if not all([admin_bot_token, client_bot_token]):
-        logging.warning("Токени ботів (ADMIN_BOT_TOKEN/CLIENT_BOT_TOKEN) не налаштовані в .env.")
-        return None, None
-    
-    from aiogram.enums import ParseMode
-    from aiogram.client.default import DefaultBotProperties
-
-    admin_bot = Bot(token=admin_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    client_bot = Bot(token=client_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    return admin_bot, client_bot
-
-def parse_products_str(products_str: str) -> dict:
-    """Парсить рядок продуктів у словник {'Назва': кількість}."""
-    if not products_str: return {}
-    result = {}
-    for part in products_str.split(", "):
-        try:
-            if " x " in part:
-                name, qty = part.rsplit(" x ", 1)
-                # strip() видаляє пробіли, що може викликати розбіжність з БД, якщо там вони є
-                result[name.strip()] = int(qty)
-        except ValueError: continue
-    return result
+# get_bot_instances ВИДАЛЕНО (боти беруться з request.app.state)
+# parse_products_str ВИДАЛЕНО (імпортовано з utils)
 
 @router.get("/admin/order/manage/{order_id}", response_class=HTMLResponse)
 async def get_manage_order_page(
@@ -73,13 +47,13 @@ async def get_manage_order_page(
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
 
     # --- Формування списку товарів з іконками цехів ---
+    # Використовуємо функцію з utils
     products_map = parse_products_str(order.products)
     products_html_list = []
     
     if products_map:
         product_names = list(products_map.keys())
         # Отримуємо інформацію про цех для кожного товару
-        # Шукаємо товари, ігноруючи можливі розбіжності в пробілах
         products_res = await session.execute(select(Product))
         all_products = products_res.scalars().all()
         
@@ -126,6 +100,11 @@ async def get_manage_order_page(
         history_html += f"<li><b>{entry.status.name}</b> (Ким: {html.escape(entry.actor_info)}) - {timestamp}</li>"
     history_html += "</ul>"
     
+    # --- Payment Method Selection ---
+    sel_cash = "selected" if order.payment_method == 'cash' else ""
+    sel_card = "selected" if order.payment_method == 'card' else ""
+    payment_method_text = "Готівка" if order.payment_method == 'cash' else "Картка"
+
     body = ADMIN_ORDER_MANAGE_BODY.format(
         order_id=order.id,
         customer_name=html.escape(order.customer_name or "Не вказано"),
@@ -135,7 +114,10 @@ async def get_manage_order_page(
         products_html=products_html,
         status_options=status_options,
         courier_options=courier_options,
-        history_html=history_html or "<p>Історія статусів порожня.</p>"
+        history_html=history_html or "<p>Історія статусів порожня.</p>",
+        sel_cash=sel_cash, # NEW
+        sel_card=sel_card, # NEW
+        payment_method_text=payment_method_text # NEW
     )
 
     active_classes = {key: "" for key in ["clients_active", "main_active", "products_active", "categories_active", "statuses_active", "settings_active", "employees_active", "reports_active", "menu_active", "tables_active", "design_active"]}
@@ -150,8 +132,10 @@ async def get_manage_order_page(
 
 @router.post("/admin/order/manage/{order_id}/set_status")
 async def web_set_order_status(
+    request: Request, # Додано Request для доступу до ботів
     order_id: int,
     status_id: int = Form(...),
+    payment_method: str = Form("cash"), # Додано зчитування методу оплати
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
@@ -160,12 +144,20 @@ async def web_set_order_status(
     if not order:
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
     
+    # Оновлюємо метод оплати
+    order.payment_method = payment_method
+
     # --- БЛОКУВАННЯ ЗМІН ЗАВЕРШЕНИХ ЗАМОВЛЕНЬ ---
+    # (Якщо хочете дозволити змінювати Оплату навіть після закриття - приберіть цей блок,
+    #  але логічно, що закрите замовлення вже не чіпають).
     if order.status.is_completed_status or order.status.is_cancelled_status:
-        # Повертаємо помилку або редірект з повідомленням (тут помилка для простоти)
+        # Можна дозволити зміну статусу, якщо це просто корекція, але обережно.
+        # Тут залишимо блокування для безпеки.
         raise HTTPException(status_code=400, detail="Замовлення вже закрите (виконане або скасоване). Зміна статусу заборонена.")
 
     if order.status_id == status_id:
+        # Тільки зберегли метод оплати
+        await session.commit()
         return RedirectResponse(url=f"/admin/order/manage/{order_id}", status_code=303)
 
     old_status_name = order.status.name if order.status else "Невідомий"
@@ -177,26 +169,27 @@ async def web_set_order_status(
     
     await session.commit()
 
-    admin_bot, client_bot = await get_bot_instances(session)
+    # Отримуємо ботів зі стану програми
+    admin_bot = request.app.state.admin_bot
+    client_bot = request.app.state.client_bot
+
     if admin_bot:
-        try:
-            await notify_all_parties_on_status_change(
-                order=order,
-                old_status_name=old_status_name,
-                actor_info=actor_info,
-                admin_bot=admin_bot,
-                client_bot=client_bot,
-                session=session
-            )
-        finally:
-            await admin_bot.session.close()
-            if client_bot: await client_bot.session.close()
+        # Викликаємо notify без створення нових сесій ботів
+        await notify_all_parties_on_status_change(
+            order=order,
+            old_status_name=old_status_name,
+            actor_info=actor_info,
+            admin_bot=admin_bot,
+            client_bot=client_bot,
+            session=session
+        )
 
     return RedirectResponse(url=f"/admin/order/manage/{order_id}", status_code=303)
 
 
 @router.post("/admin/order/manage/{order_id}/assign_courier")
 async def web_assign_courier(
+    request: Request, # Додано Request
     order_id: int,
     courier_id: int = Form(...),
     session: AsyncSession = Depends(get_db_session),
@@ -207,64 +200,61 @@ async def web_assign_courier(
     if not order:
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
 
-    # --- БЛОКУВАННЯ ДЛЯ ЗАВЕРШЕНИХ ---
     if order.status.is_completed_status or order.status.is_cancelled_status:
         raise HTTPException(status_code=400, detail="Замовлення вже закрите. Призначення кур'єра заборонено.")
 
-    admin_bot, _ = await get_bot_instances(session)
+    admin_bot = request.app.state.admin_bot
     if not admin_bot:
          raise HTTPException(status_code=500, detail="Бот не налаштований для відправки сповіщень.")
          
     admin_chat_id_str = os.environ.get('ADMIN_CHAT_ID')
 
-    try:
-        old_courier_id = order.courier_id
-        new_courier_name = "Не призначено"
+    old_courier_id = order.courier_id
+    new_courier_name = "Не призначено"
 
-        if old_courier_id and old_courier_id != courier_id:
-            old_courier = await session.get(Employee, old_courier_id)
-            if old_courier and old_courier.telegram_user_id:
-                try:
-                    await admin_bot.send_message(old_courier.telegram_user_id, f"❗️ Замовлення #{order.id} було знято з вас оператором.")
-                except Exception as e:
-                    logger.error(f"Не вдалося сповістити колишнього кур'єра {old_courier.id}: {e}")
+    if old_courier_id and old_courier_id != courier_id:
+        old_courier = await session.get(Employee, old_courier_id)
+        if old_courier and old_courier.telegram_user_id:
+            try:
+                await admin_bot.send_message(old_courier.telegram_user_id, f"❗️ Замовлення #{order.id} було знято з вас оператором.")
+            except Exception as e:
+                logger.error(f"Не вдалося сповістити колишнього кур'єра {old_courier.id}: {e}")
 
-        if courier_id == 0:
-            order.courier_id = None
-        else:
-            new_courier = await session.get(Employee, courier_id)
-            if not new_courier:
-                raise HTTPException(status_code=404, detail="Кур'єра не знайдено")
-            
-            order.courier_id = courier_id
-            new_courier_name = new_courier.full_name
-            
-            if new_courier.telegram_user_id:
-                try:
-                    kb_courier = InlineKeyboardBuilder()
-                    statuses_res = await session.execute(select(OrderStatus).where(OrderStatus.visible_to_courier == True).order_by(OrderStatus.id))
-                    statuses = statuses_res.scalars().all()
-                    kb_courier.row(*[InlineKeyboardButton(text=s.name, callback_data=f"courier_set_status_{order.id}_{s.id}") for s in statuses])
-                    
-                    if order.is_delivery and order.address:
-                        encoded_address = quote_plus(order.address)
-                        map_url = f"http://googleusercontent.com/maps/google.com/0{encoded_address}"
-                        kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_url))
-                        
-                    await admin_bot.send_message(
-                        new_courier.telegram_user_id,
-                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html.escape(order.address or 'Самовивіз')}\nТелефон: {html.escape(order.phone_number)}\nСума: {order.total_price} грн.",
-                        reply_markup=kb_courier.as_markup()
-                    )
-                except Exception as e:
-                    logger.error(f"Не вдалося сповістити нового кур'єра {new_courier.telegram_user_id}: {e}")
+    if courier_id == 0:
+        order.courier_id = None
+    else:
+        new_courier = await session.get(Employee, courier_id)
+        if not new_courier:
+            raise HTTPException(status_code=404, detail="Кур'єра не знайдено")
         
-        await session.commit()
+        order.courier_id = courier_id
+        new_courier_name = new_courier.full_name
+        
+        if new_courier.telegram_user_id:
+            try:
+                kb_courier = InlineKeyboardBuilder()
+                statuses_res = await session.execute(select(OrderStatus).where(OrderStatus.visible_to_courier == True).order_by(OrderStatus.id))
+                statuses = statuses_res.scalars().all()
+                kb_courier.row(*[InlineKeyboardButton(text=s.name, callback_data=f"courier_set_status_{order.id}_{s.id}") for s in statuses])
+                
+                if order.is_delivery and order.address:
+                    encoded_address = quote_plus(order.address)
+                    map_url = f"http://googleusercontent.com/maps/google.com/0{encoded_address}"
+                    kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_url))
+                    
+                await admin_bot.send_message(
+                    new_courier.telegram_user_id,
+                    f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html.escape(order.address or 'Самовивіз')}\nТелефон: {html.escape(order.phone_number)}\nСума: {order.total_price} грн.",
+                    reply_markup=kb_courier.as_markup()
+                )
+            except Exception as e:
+                logger.error(f"Не вдалося сповістити нового кур'єра {new_courier.telegram_user_id}: {e}")
+    
+    await session.commit()
 
-        if admin_chat_id_str:
+    if admin_chat_id_str:
+        try:
             await admin_bot.send_message(admin_chat_id_str, f"👤 Замовленню #{order.id} призначено кур'єра: <b>{html.escape(new_courier_name)}</b> (через веб-панель)")
-            
-    finally:
-        await admin_bot.session.close()
+        except Exception: pass
     
     return RedirectResponse(url=f"/admin/order/manage/{order_id}", status_code=303)

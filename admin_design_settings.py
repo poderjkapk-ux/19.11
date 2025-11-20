@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from models import Settings
-from templates import ADMIN_HTML_TEMPLATE, ADMIN_DESIGN_SETTINGS_BODY
+from templates import ADMIN_HTML_TEMPLATE
 from dependencies import get_db_session, check_credentials
 
 router = APIRouter()
@@ -24,8 +24,7 @@ FONT_FAMILIES_SERIF = [
 DEFAULT_FONT_SERIF = "Playfair Display"
 # -----------------------------------------------
 
-# --- ОНОВЛЕНИЙ ШАБЛОН HTML ФОРМИ ---
-# Додано секцію "Підвал" та нові поля кольорів
+# --- ШАБЛОН HTML ФОРМИ (Локально, оскільки специфічний для цього файлу) ---
 ADMIN_DESIGN_SETTINGS_BODY = """
 <div class="card">
     <form action="/admin/design_settings" method="post">
@@ -128,7 +127,7 @@ async def get_design_settings_page(
     """Відображає сторінку налаштувань дизайну, SEO та текстів."""
     settings = await session.get(Settings, 1)
     if not settings:
-        settings = Settings() # Provide default values if no settings exist
+        settings = Settings(id=1) # Створюємо тимчасовий об'єкт, якщо в БД пусто
 
     # --- Функція для генерації HTML <option> для <select> ---
     def get_font_options(font_list: list, selected_font: str, default_font: str) -> str:

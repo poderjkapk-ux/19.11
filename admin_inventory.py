@@ -2,6 +2,7 @@
 
 import html
 import json
+from decimal import Decimal
 from fastapi import APIRouter, Depends, Form, HTTPException, Body, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,11 +26,13 @@ async def inventory_dashboard(session: AsyncSession = Depends(get_db_session), u
     
     ing_rows = ""
     for ing in ingredients:
-        color = "red" if ing.stock_quantity <= 0 else ("orange" if ing.stock_quantity < 5 else "green")
+        # Конвертуємо в float для порівняння, оскільки в БД це Numeric
+        qty = float(ing.stock_quantity)
+        color = "red" if qty <= 0 else ("orange" if qty < 5 else "green")
         ing_rows += f"""
         <tr>
             <td>{html.escape(ing.name)}</td>
-            <td><strong style="color:{color}">{ing.stock_quantity:.3f}</strong> {html.escape(ing.unit)}</td>
+            <td><strong style="color:{color}">{qty:.3f}</strong> {html.escape(ing.unit)}</td>
             <td>{ing.price_per_unit:.2f} грн</td>
             <td class="actions">
                 <a href="/admin/inventory/edit/{ing.id}" class="button-sm" title="Редагувати">✏️</a>
@@ -120,7 +123,7 @@ async def write_off_page(session: AsyncSession = Depends(get_db_session), userna
     </script>
     """
     
-    ing_options = "".join([f'<option value="{i.id}">{html.escape(i.name)} ({i.unit}) | Залишок: {i.stock_quantity}</option>' for i in ingredients])
+    ing_options = "".join([f'<option value="{i.id}">{html.escape(i.name)} ({i.unit}) | Залишок: {i.stock_quantity:.3f}</option>' for i in ingredients])
     
     body = f"""
     {js_script}
@@ -262,8 +265,21 @@ async def add_ingredient_form(session: AsyncSession = Depends(get_db_session), u
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Новий інгредієнт", body=body, site_title=settings.site_title, main_active="", **active_classes))
 
 @router.post("/admin/inventory/add_ingredient")
-async def add_ingredient_post(name: str = Form(...), unit: str = Form(...), stock_quantity: float = Form(0), price_per_unit: float = Form(0), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    session.add(Ingredient(name=name, unit=unit, stock_quantity=stock_quantity, price_per_unit=price_per_unit))
+async def add_ingredient_post(
+    name: str = Form(...), 
+    unit: str = Form(...), 
+    stock_quantity: float = Form(0), 
+    price_per_unit: float = Form(0), 
+    session: AsyncSession = Depends(get_db_session), 
+    username: str = Depends(check_credentials)
+):
+    # Використовуємо Decimal для збереження
+    session.add(Ingredient(
+        name=name, 
+        unit=unit, 
+        stock_quantity=Decimal(str(stock_quantity)), 
+        price_per_unit=Decimal(str(price_per_unit))
+    ))
     await session.commit()
     return RedirectResponse("/admin/inventory", status_code=303)
 
@@ -298,13 +314,21 @@ async def edit_ingredient_form(ing_id: int, session: AsyncSession = Depends(get_
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Редагування інгредієнта", body=body, site_title=settings.site_title, main_active="", **active_classes))
 
 @router.post("/admin/inventory/edit/{ing_id}")
-async def edit_ingredient_post(ing_id: int, name: str = Form(...), unit: str = Form(...), stock_quantity: float = Form(...), price_per_unit: float = Form(...), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
+async def edit_ingredient_post(
+    ing_id: int, 
+    name: str = Form(...), 
+    unit: str = Form(...), 
+    stock_quantity: float = Form(...), 
+    price_per_unit: float = Form(...), 
+    session: AsyncSession = Depends(get_db_session), 
+    username: str = Depends(check_credentials)
+):
     ing = await session.get(Ingredient, ing_id)
     if ing:
         ing.name = name
         ing.unit = unit
-        ing.stock_quantity = stock_quantity
-        ing.price_per_unit = price_per_unit
+        ing.stock_quantity = Decimal(str(stock_quantity))
+        ing.price_per_unit = Decimal(str(price_per_unit))
         await session.commit()
     return RedirectResponse("/admin/inventory", status_code=303)
 
@@ -325,14 +349,14 @@ async def manage_tech_card(product_id: int, session: AsyncSession = Depends(get_
     links = links_res.scalars().all()
     
     rows = ""
-    total_cost = 0
+    total_cost = Decimal(0)
     for link in links:
         cost = link.quantity * link.ingredient.price_per_unit
         total_cost += cost
         rows += f"""
         <tr>
             <td>{html.escape(link.ingredient.name)}</td>
-            <td>{link.quantity} {link.ingredient.unit}</td>
+            <td>{link.quantity:.3f} {link.ingredient.unit}</td>
             <td>~{cost:.2f} грн</td>
             <td><a href="/admin/inventory/tech_card/delete/{link.id}" class="button-sm danger" onclick="return confirm('Видалити компонент?');">🗑️</a></td>
         </tr>
@@ -379,8 +403,18 @@ async def manage_tech_card(product_id: int, session: AsyncSession = Depends(get_
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Техкарта {product.name}", body=body, site_title=settings.site_title, main_active="", **active_classes))
 
 @router.post("/admin/inventory/tech_card/add")
-async def add_tech_card_item(product_id: int = Form(...), ingredient_id: int = Form(...), quantity: float = Form(...), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    session.add(ProductIngredient(product_id=product_id, ingredient_id=ingredient_id, quantity=quantity))
+async def add_tech_card_item(
+    product_id: int = Form(...), 
+    ingredient_id: int = Form(...), 
+    quantity: float = Form(...), 
+    session: AsyncSession = Depends(get_db_session), 
+    username: str = Depends(check_credentials)
+):
+    session.add(ProductIngredient(
+        product_id=product_id, 
+        ingredient_id=ingredient_id, 
+        quantity=Decimal(str(quantity))
+    ))
     await session.commit()
     return RedirectResponse(f"/admin/inventory/tech_card/{product_id}", status_code=303)
 
@@ -517,13 +551,19 @@ async def api_add_supply(data: dict = Body(...), session: AsyncSession = Depends
     comment = data.get('comment', '')
     if not items: raise HTTPException(status_code=400, detail="Немає товарів")
     
-    total_cost = sum(float(x['price']) for x in items)
+    # Рахуємо загальну вартість як Decimal
+    total_cost = sum(Decimal(str(x['price'])) for x in items)
     supply = Supply(comment=comment, total_cost=total_cost)
     session.add(supply)
     await session.flush()
     
     for item in items:
-        session.add(SupplyItem(supply_id=supply.id, ingredient_id=int(item['ingredient_id']), quantity=float(item['quantity']), price=float(item['price'])))
+        session.add(SupplyItem(
+            supply_id=supply.id, 
+            ingredient_id=int(item['ingredient_id']), 
+            quantity=Decimal(str(item['quantity'])), 
+            price=Decimal(str(item['price']))
+        ))
     
     await add_supply_items(session, items)
     await session.commit()
