@@ -14,27 +14,35 @@ from utils import parse_products_str
 
 logger = logging.getLogger(__name__)
 
-# _parse_products_str ВИДАЛЕНО (використовується utils.parse_products_str)
-
 async def notify_new_order_to_staff(admin_bot: Bot, order: Order, session: AsyncSession):
     """
     Надсилає сповіщення про НОВЕ замовлення в загальний чат, операторам, поварам та барменам.
     """
     admin_chat_id_str = os.environ.get('ADMIN_CHAT_ID')
     
-    await session.refresh(order, ['status'])
-    is_delivery = order.is_delivery # Визначаємо тип замовлення
+    # Додаємо 'table' в завантаження, щоб показати ім'я столика
+    await session.refresh(order, ['status', 'table'])
+    is_delivery = order.is_delivery 
 
-    # Генеруємо текст та клавіатуру для керування (для оператора/адміна)
+    # --- ВИПРАВЛЕНА ЛОГІКА ВІДОБРАЖЕННЯ ТИПУ ---
+    if order.order_type == 'in_house':
+        delivery_info = f"📍 <b>В закладі</b> (Стіл: {html.quote(order.table.name if order.table else 'Невідомий')})"
+        source = "Джерело: 🤵 Офіціант / QR"
+    elif is_delivery:
+        delivery_info = f"🚚 <b>Доставка</b>: {html.quote(order.address or 'Не вказана')}"
+        source = f"Джерело: {'🌐 Веб-сайт' if order.user_id is None else '🤖 Telegram-бот'}"
+    else:
+        delivery_info = "🏃 <b>Самовивіз</b>"
+        source = f"Джерело: {'🌐 Веб-сайт' if order.user_id is None else '🤖 Telegram-бот'}"
+    # --------------------------------------------
+
     status_name = order.status.name if order.status else 'Невідомий'
-    delivery_info = f"Адреса: {html.quote(order.address or 'Не вказана')}" if is_delivery else 'Самовивіз'
     time_info = f"Час: {html.quote(order.delivery_time)}"
-    source = f"Джерело: {'Веб-сайт' if order.user_id is None else 'Telegram-бот'}"
     products_formatted = "- " + html.quote(order.products or '').replace(", ", "\n- ")
     
-    admin_text = (f"<b>Замовлення #{order.id}</b> ({source})\n\n"
+    admin_text = (f"<b>Замовлення #{order.id}</b>\n{source}\n\n"
                   f"<b>Клієнт:</b> {html.quote(order.customer_name)}\n<b>Телефон:</b> {html.quote(order.phone_number)}\n"
-                  f"<b>{delivery_info}</b>\n<b>{time_info}</b>\n\n"
+                  f"{delivery_info}\n<b>{time_info}</b>\n\n"
                   f"<b>Страви:</b>\n{products_formatted}\n\n"
                   f"<b>Сума:</b> {order.total_price} грн\n\n"
                   f"<b>Статус:</b> {status_name}")

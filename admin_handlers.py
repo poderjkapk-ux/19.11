@@ -32,8 +32,6 @@ class AdminEditOrderStates(StatesGroup):
     waiting_for_new_address = State()
     waiting_for_cancellation_reason = State()
 
-# parse_products_string ВИДАЛЕНО (використовується utils.parse_products_str)
-
 def build_products_string(products_dict: dict[str, int]) -> str:
     return ", ".join([f"{name} x {quantity}" for name, quantity in products_dict.items()])
 
@@ -48,15 +46,28 @@ async def recalculate_order_total(products_dict: dict[str, int], session: AsyncS
     return total
 
 async def _generate_order_admin_view(order: Order, session: AsyncSession):
-    await session.refresh(order, ['status', 'courier'])
+    # Додаємо 'table' в refresh
+    await session.refresh(order, ['status', 'courier', 'table'])
+    
     status_name = order.status.name if order.status else 'Невідомий'
-    delivery_info = f"Адреса: {html_module.escape(order.address or 'Не вказана')}" if order.is_delivery else 'Самовивіз'
+    
+    # --- ВИПРАВЛЕНА ЛОГІКА ВІДОБРАЖЕННЯ ---
+    if order.order_type == 'in_house':
+        table_name = order.table.name if order.table else '?'
+        delivery_info = f"📍 <b>В закладі</b> (Стіл: {html_module.escape(table_name)})"
+        source = "Джерело: 🤵 Офіціант/QR"
+    elif order.is_delivery:
+        delivery_info = f"🚚 Адреса: {html_module.escape(order.address or 'Не вказана')}"
+        source = f"Джерело: {'🌐 Сайт' if order.user_id is None else '🤖 Telegram'}"
+    else:
+        delivery_info = "🏃 Самовивіз"
+        source = f"Джерело: {'🌐 Сайт' if order.user_id is None else '🤖 Telegram'}"
+    # ---------------------------------------
+
     time_info = f"Час: {html_module.escape(order.delivery_time)}"
-    source = f"Джерело: {'Сайт' if order.user_id is None else 'Telegram-бот'}"
     courier_info = order.courier.full_name if order.courier else 'Не призначений'
     products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
     
-    # Додаємо відображення способу оплати
     payment_icon = "💵" if order.payment_method == 'cash' else "💳"
     payment_text = "Готівка" if order.payment_method == 'cash' else "Картка"
     payment_info = f"<b>Оплата:</b> {payment_icon} {payment_text}"
@@ -103,7 +114,6 @@ async def _display_order_view(bot: Bot, chat_id: int, message_id: int, order_id:
 async def _display_edit_items_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
     order = await session.get(Order, order_id)
     if not order: return
-    # Використовуємо нову функцію
     products_dict = parse_products_str(order.products)
     text = f"<b>Склад замовлення #{order.id}</b> (Сума: {order.total_price} грн)\n\n"
     kb = InlineKeyboardBuilder()
@@ -175,8 +185,10 @@ def register_admin_handlers(dp: Dispatcher):
         if not order: return await callback.answer("Замовлення не знайдено!", show_alert=True)
         if order.status_id == new_status_id: return await callback.answer("Статус вже встановлено.")
 
+        # --- БЛОКУВАННЯ ЗАВЕРШЕНИХ ---
         if order.status.is_completed_status or order.status.is_cancelled_status:
              return await callback.answer("⛔️ Замовлення вже закрите. Зміна статусу заборонена.", show_alert=True)
+        # -----------------------------
 
         new_status = await session.get(OrderStatus, new_status_id)
         if not new_status: return await callback.answer("Статус не знайдено в БД.", show_alert=True)
@@ -271,6 +283,8 @@ def register_admin_handlers(dp: Dispatcher):
         order_id = int(callback.data.split("_")[2])
         order = await session.get(Order, order_id, options=[joinedload(Order.status)])
         if not order: return await callback.answer("Замовлення не знайдено!", show_alert=True)
+        
+        # --- БЛОКУВАННЯ РЕДАГУВАННЯ ---
         if order.status.is_completed_status or order.status.is_cancelled_status:
             return await callback.answer("⛔️ Неможливо редагувати закрите замовлення.", show_alert=True)
         
@@ -338,9 +352,15 @@ def register_admin_handlers(dp: Dispatcher):
         data = await state.get_data()
         order_id, message_id = data['order_id'], data['message_id']
         order = await session.get(Order, order_id)
+        
+        # --- ПЕРЕВІРКА СТАТУСУ ПЕРЕД ЗБЕРЕЖЕННЯМ ---
         if order:
-            setattr(order, field_to_update, message.text)
-            await session.commit()
+            if order.status.is_completed_status or order.status.is_cancelled_status:
+                await message.answer("⛔️ Помилка: Замовлення закрите.")
+            else:
+                setattr(order, field_to_update, message.text)
+                await session.commit()
+        
         await state.clear()
         try: await message.delete()
         except TelegramBadRequest: pass
@@ -366,6 +386,8 @@ def register_admin_handlers(dp: Dispatcher):
         product = await session.get(Product, product_id)
         if not order or not product: return await callback.answer("Помилка!", show_alert=True)
         if order.is_deducted: return await callback.answer("🚫 Товари вже списані.", show_alert=True)
+        
+        # --- БЛОКУВАННЯ ---
         if order.status.is_completed_status or order.status.is_cancelled_status: return await callback.answer("🚫 Замовлення закрите.", show_alert=True)
 
         # Використовуємо нову функцію
@@ -388,6 +410,10 @@ def register_admin_handlers(dp: Dispatcher):
         order_id = int(callback.data.split("_")[-1])
         order = await session.get(Order, order_id)
         if not order: return
+        
+        # --- БЛОКУВАННЯ ---
+        if order.status.is_completed_status or order.status.is_cancelled_status: return await callback.answer("🚫 Замовлення закрите.", show_alert=True)
+
         order.is_delivery = not order.is_delivery
         if not order.is_delivery: order.address = None
         await session.commit()
@@ -423,6 +449,8 @@ def register_admin_handlers(dp: Dispatcher):
         product = await session.get(Product, product_id)
         if not order or not product: return await callback.answer("Помилка!", show_alert=True)
         if order.is_deducted: return await callback.answer("🚫 Товари вже списані.", show_alert=True)
+        
+        # --- БЛОКУВАННЯ ---
         if order.status.is_completed_status or order.status.is_cancelled_status: return await callback.answer("🚫 Замовлення закрите.", show_alert=True)
 
         # Використовуємо нову функцію
@@ -464,6 +492,7 @@ def register_admin_handlers(dp: Dispatcher):
         order = await session.get(Order, order_id, options=[joinedload(Order.status)])
         if not order: return await callback.answer("Замовлення не знайдено!", show_alert=True)
         
+        # --- БЛОКУВАННЯ ---
         if order.status.is_completed_status or order.status.is_cancelled_status:
              return await callback.answer("⛔️ Замовлення вже закрите.", show_alert=True)
 

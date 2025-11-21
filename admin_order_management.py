@@ -40,7 +40,8 @@ async def get_manage_order_page(
         options=[
             joinedload(Order.status),
             joinedload(Order.courier),
-            joinedload(Order.history).joinedload(OrderStatusHistory.status)
+            joinedload(Order.history).joinedload(OrderStatusHistory.status),
+            joinedload(Order.table) # Завантажуємо столик
         ]
     )
     if not order:
@@ -105,11 +106,23 @@ async def get_manage_order_page(
     sel_card = "selected" if order.payment_method == 'card' else ""
     payment_method_text = "Готівка" if order.payment_method == 'cash' else "Картка"
 
+    # --- ВИПРАВЛЕННЯ ОТОБРАЖЕННЯ АДРЕСИ ---
+    if order.order_type == 'in_house':
+        table_name = order.table.name if order.table else '?'
+        display_address = f"📍 В закладі (Стіл: {html.escape(table_name)})"
+    elif order.is_delivery:
+        display_address = html.escape(order.address or "Адреса не вказана")
+    else:
+        display_address = "🏃 Самовивіз"
+    # --------------------------------------
+
     body = ADMIN_ORDER_MANAGE_BODY.format(
         order_id=order.id,
         customer_name=html.escape(order.customer_name or "Не вказано"),
         phone_number=html.escape(order.phone_number or "Не вказано"),
-        address=html.escape(order.address or "Самовивіз"),
+        
+        address=display_address, # <-- Використовуємо нову змінну
+        
         total_price=order.total_price,
         products_html=products_html,
         status_options=status_options,
@@ -148,11 +161,7 @@ async def web_set_order_status(
     order.payment_method = payment_method
 
     # --- БЛОКУВАННЯ ЗМІН ЗАВЕРШЕНИХ ЗАМОВЛЕНЬ ---
-    # (Якщо хочете дозволити змінювати Оплату навіть після закриття - приберіть цей блок,
-    #  але логічно, що закрите замовлення вже не чіпають).
     if order.status.is_completed_status or order.status.is_cancelled_status:
-        # Можна дозволити зміну статусу, якщо це просто корекція, але обережно.
-        # Тут залишимо блокування для безпеки.
         raise HTTPException(status_code=400, detail="Замовлення вже закрите (виконане або скасоване). Зміна статусу заборонена.")
 
     if order.status_id == status_id:

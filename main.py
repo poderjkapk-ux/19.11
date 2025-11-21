@@ -2141,8 +2141,24 @@ async def get_add_order_form(session: AsyncSession = Depends(get_db_session), us
 @app.get("/admin/order/edit/{order_id}", response_class=HTMLResponse)
 async def get_edit_order_form(order_id: int, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     settings = await get_settings(session)
-    order = await session.get(Order, order_id)
+    # Eager load status to check flags
+    order = await session.get(Order, order_id, options=[joinedload(Order.status)]) 
     if not order: raise HTTPException(404, "Замовлення не знайдено")
+
+    # --- NEW: Check if order is closed ---
+    if order.status.is_completed_status or order.status.is_cancelled_status:
+        return HTMLResponse(
+            f"""<div style="padding: 20px; font-family: sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+                <h2 style="color: #d32f2f;">⛔️ Замовлення #{order.id} закрите</h2>
+                <p>Редагування деталей (склад, дані клієнта) заборонено, оскільки замовлення має статус "<b>{order.status.name}</b>".</p>
+                <p>Ви можете змінити статус назад, якщо це помилка, через меню "Керувати".</p>
+                <div style="margin-top: 20px;">
+                    <a href="/admin/orders" style="display: inline-block; padding: 10px 20px; background: #5a5a5a; color: white; text-decoration: none; border-radius: 5px;">⬅️ Повернутися до списку</a>
+                    <a href="/admin/order/manage/{order.id}" style="display: inline-block; padding: 10px 20px; background: #0d6efd; color: white; text-decoration: none; border-radius: 5px; margin-left: 10px;">⚙️ Перейти до керування</a>
+                </div>
+            </div>"""
+        )
+    # -------------------------------------
 
     # Використовуємо нову функцію з utils
     products_dict = parse_products_str(order.products)
@@ -2296,8 +2312,15 @@ async def api_update_order(order_id: int, request: Request, session: AsyncSessio
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Недійсний JSON")
 
-    order = await session.get(Order, order_id)
+    # Eager load status
+    order = await session.get(Order, order_id, options=[joinedload(Order.status)])
     if not order: raise HTTPException(404, "Замовлення не знайдено")
+
+    # --- NEW: Check status ---
+    if order.status.is_completed_status or order.status.is_cancelled_status:
+        raise HTTPException(status_code=400, detail="Замовлення закрите. Редагування заборонено.")
+    # -------------------------
+
     try:
         await _process_and_save_order(order, data, session)
         return JSONResponse(content={"message": "Замовлення оновлено успішно", "redirect_url": "/admin/orders"})

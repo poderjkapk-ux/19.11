@@ -618,6 +618,11 @@ def register_courier_handlers(dp_admin: Dispatcher):
         new_status = await session.get(OrderStatus, new_status_id)
         old_status_name = order.status.name if order.status else "Невідомий"
         
+        # --- БЛОКУВАННЯ ЗМІНИ ВЖЕ ЗАКРИТОГО ЗАМОВЛЕННЯ ---
+        if order.status.is_completed_status or order.status.is_cancelled_status:
+             return await callback.answer("⛔️ Замовлення вже закрите. Зміна заборонена.", show_alert=True)
+        # -------------------------------------------------
+
         # --- ЛОГІКА ПЕРЕХОПЛЕННЯ ОПЛАТИ ---
         # Якщо статус є "Завершеним" (is_completed_status=True) і метод не обрано
         if new_status.is_completed_status and not payment_method_override:
