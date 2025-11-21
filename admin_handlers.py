@@ -20,7 +20,7 @@ from models import Order, Product, Category, OrderStatus, Employee, Role, Settin
 from courier_handlers import _generate_waiter_order_view
 from notification_manager import notify_all_parties_on_status_change
 # --- КАСА: Імпорт функції прив'язки ---
-from cash_service import link_order_to_shift
+from cash_service import link_order_to_shift, register_employee_debt
 # --- UTILS: Імпорт загальної функції парсинга ---
 from utils import parse_products_str
 
@@ -70,7 +70,16 @@ async def _generate_order_admin_view(order: Order, session: AsyncSession):
     
     payment_icon = "💵" if order.payment_method == 'cash' else "💳"
     payment_text = "Готівка" if order.payment_method == 'cash' else "Картка"
-    payment_info = f"<b>Оплата:</b> {payment_icon} {payment_text}"
+    
+    # Додаємо статус оплати
+    payment_status = ""
+    if order.status.is_completed_status and order.payment_method == 'cash':
+        if order.is_cash_turned_in:
+            payment_status = " (В касі ✅)"
+        else:
+            payment_status = " (У співробітника ⚠️)"
+            
+    payment_info = f"<b>Оплата:</b> {payment_icon} {payment_text}{payment_status}"
 
     reason_html = ""
     if order.cancellation_reason:
@@ -160,7 +169,7 @@ async def _display_edit_delivery_menu(bot: Bot, chat_id: int, message_id: int, o
     kb.row(InlineKeyboardButton(text=toggle_text, callback_data=f"toggle_delivery_type_{order.id}"))
     if order.is_delivery:
         kb.row(InlineKeyboardButton(text="Змінити адресу", callback_data=f"change_address_start_{order.id}"))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order.id}"))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order_id}"))
     await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=kb.as_markup())
 
 
@@ -209,7 +218,21 @@ def register_admin_handlers(dp: Dispatcher):
 
         # --- КАСА: АВТОМАТИЧНА ПРИВ'ЯЗКА ПРИ ОПЛАТІ ---
         if new_status.is_completed_status:
+            # Прив'язуємо замовлення до зміни оператора (якщо є) або будь-якої відкритої
             await link_order_to_shift(session, order, employee.id)
+            
+            # Якщо оплата готівкою
+            if order.payment_method == 'cash':
+                # Якщо є кур'єр -> борг на кур'єра
+                if order.courier_id:
+                    await register_employee_debt(session, order, order.courier_id)
+                # Якщо є офіціант (і замовлення в закладі) -> борг на офіціанта
+                elif order.accepted_by_waiter_id:
+                    await register_employee_debt(session, order, order.accepted_by_waiter_id)
+                # Якщо нікого немає (Самовивіз або адмін продав сам) -> гроші в касі
+                else:
+                    order.is_cash_turned_in = True
+        # -----------------------------------------------
         
         old_status_name = order.status.name if order.status else 'Невідомий'
         order.status_id = new_status_id
@@ -233,7 +256,14 @@ def register_admin_handlers(dp: Dispatcher):
         )
         
         await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
-        await callback.answer(f"Статус змінено на {new_status.name}. Гроші враховано.")
+        
+        msg = f"Статус змінено на {new_status.name}."
+        if new_status.is_completed_status and order.payment_method == 'cash' and not order.is_cash_turned_in:
+             msg += " ⚠️ Гроші записані в борг виконавцю."
+        elif new_status.is_completed_status:
+             msg += " 💰 Гроші враховано."
+             
+        await callback.answer(msg)
 
     @dp.message(AdminEditOrderStates.waiting_for_cancellation_reason)
     async def process_cancellation_reason(message: Message, state: FSMContext, session: AsyncSession):

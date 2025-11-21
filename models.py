@@ -62,6 +62,11 @@ class Employee(Base):
     role_id: Mapped[int] = mapped_column(sa.ForeignKey('roles.id'), nullable=False)
     role: Mapped["Role"] = relationship("Role", back_populates="employees", lazy='selectin')
     is_on_shift: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"), nullable=False)
+    
+    # --- НОВЕ: Баланс готівки "на руках" у співробітника ---
+    cash_balance: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, server_default=text("0.00"), comment="Гроші, які співробітник винен касі")
+    # -------------------------------------------------------
+
     current_order_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('orders.id', ondelete="SET NULL"), nullable=True)
     current_order: Mapped[Optional["Order"]] = relationship("Order", foreign_keys="Employee.current_order_id")
     
@@ -109,7 +114,7 @@ class OrderStatus(Base):
     orders: Mapped[list["Order"]] = relationship("Order", back_populates="status")
     history_entries: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="status")
 
-# --- КАСОВІ ЗМІНИ (НОВІ ТАБЛИЦІ) ---
+# --- КАСОВІ ЗМІНИ ---
 
 class CashShift(Base):
     """Касова зміна"""
@@ -120,7 +125,6 @@ class CashShift(Base):
     start_time: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now())
     end_time: Mapped[Optional[datetime]] = mapped_column(sa.DateTime, nullable=True)
     
-    # Використовуємо Numeric для грошей
     start_cash: Mapped[float] = mapped_column(sa.Numeric(10, 2), default=0.0, comment="Залишок на початок зміни")
     end_cash_actual: Mapped[Optional[float]] = mapped_column(sa.Numeric(10, 2), nullable=True, comment="Фактичний залишок при закритті")
     
@@ -143,7 +147,7 @@ class CashTransaction(Base):
     shift_id: Mapped[int] = mapped_column(sa.ForeignKey('cash_shifts.id'), nullable=False)
     
     amount: Mapped[float] = mapped_column(sa.Numeric(10, 2), nullable=False)
-    transaction_type: Mapped[str] = mapped_column(sa.String(20), nullable=False, comment="'in' - внесення, 'out' - вилучення")
+    transaction_type: Mapped[str] = mapped_column(sa.String(20), nullable=False, comment="'in' - внесення, 'out' - вилучення, 'handover' - здача виручки")
     comment: Mapped[str] = mapped_column(sa.String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now())
     
@@ -181,10 +185,13 @@ class Order(Base):
     is_deducted: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"))
     cancellation_reason: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
     
-    # --- КАСА (Нові поля) ---
+    # --- КАСА ---
     payment_method: Mapped[str] = mapped_column(sa.String(20), default='cash', server_default=text("'cash'"), nullable=False, comment="'cash' або 'card'")
     cash_shift_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('cash_shifts.id'), nullable=True)
     cash_shift: Mapped[Optional["CashShift"]] = relationship("CashShift", back_populates="orders")
+    
+    # --- НОВЕ: Прапорець, чи здані гроші в касу (для готівки) ---
+    is_cash_turned_in: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("false"), comment="Чи здана готівка касиру")
 
 
 class OrderStatusHistory(Base):

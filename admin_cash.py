@@ -6,13 +6,16 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, or_
 from sqlalchemy.orm import joinedload
 
-from models import Employee, CashShift, Settings, Role
+from models import Employee, CashShift, Settings, Order
 from templates import ADMIN_HTML_TEMPLATE
 from dependencies import get_db_session, check_credentials
-from cash_service import open_new_shift, get_open_shift, get_shift_statistics, close_active_shift, add_shift_transaction
+from cash_service import (
+    open_new_shift, get_shift_statistics, close_active_shift, 
+    add_shift_transaction, process_handover
+)
 
 router = APIRouter()
 
@@ -30,8 +33,6 @@ async def cash_dashboard(
     )
     active_shift = active_shift_res.scalars().first()
     
-    body = ""
-    
     # Кнопка історії
     history_btn = """
     <div style="text-align: right; margin-bottom: 20px;">
@@ -39,31 +40,49 @@ async def cash_dashboard(
     </div>
     """
     
-    if not active_shift:
-        # Зміна закрита. Форма відкриття.
-        employees = (await session.execute(select(Employee).where(Employee.is_on_shift == True))).scalars().all()
-        emp_options = "".join([f'<option value="{e.id}">{html.escape(e.full_name)}</option>' for e in employees])
+    debtors_html = ""
+    
+    if active_shift:
+        # --- БЛОК БОРЖНИКІВ (Хто не здав касу) ---
+        debtors_res = await session.execute(
+            select(Employee).where(Employee.cash_balance > 0).order_by(desc(Employee.cash_balance))
+        )
+        debtors = debtors_res.scalars().all()
         
-        body = f"""
-        {history_btn}
-        <div class="card">
-            <h2>🔴 Каса закрита</h2>
-            <p>Щоб почати роботу, відкрийте нову касову зміну.</p>
-            <form action="/admin/cash/open" method="post" style="max_width: 400px;">
-                <label>Касир (хто відкриває):</label>
-                <select name="employee_id" required>
-                    {emp_options or '<option value="" disabled>Немає працівників на зміні</option>'}
-                </select>
-                
-                <label>Залишок в касі (грн):</label>
-                <input type="number" step="0.01" name="start_cash" value="0.00" required>
-                
-                <button type="submit" class="button">🟢 Відкрити зміну</button>
-            </form>
-        </div>
-        """
-    else:
-        # Зміна відкрита. X-звіт та дії.
+        if debtors:
+            debtors_rows = ""
+            for d in debtors:
+                debtors_rows += f"""
+                <tr>
+                    <td>{html.escape(d.full_name)}</td>
+                    <td>{d.role.name}</td>
+                    <td style="color: #d32f2f; font-weight: bold;">{d.cash_balance:.2f} грн</td>
+                    <td class="actions">
+                        <a href="/admin/cash/handover/{d.id}" class="button-sm">💸 Прийняти гроші</a>
+                    </td>
+                </tr>
+                """
+            
+            debtors_html = f"""
+            <div class="card" style="border-left: 5px solid #f57c00;">
+                <h3>💸 Очікують здачі виручки</h3>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>Співробітник</th><th>Роль</th><th>Сума на руках</th><th>Дії</th></tr></thead>
+                        <tbody>{debtors_rows}</tbody>
+                    </table>
+                </div>
+            </div>
+            """
+        else:
+            debtors_html = """
+            <div class="card" style="border-left: 5px solid #4caf50;">
+                <h3>✅ Всі співробітники здали виручку</h3>
+            </div>
+            """
+        # ------------------------------------------
+
+        # Статистика зміни
         stats = await get_shift_statistics(session, active_shift.id)
         
         x_report_html = f"""
@@ -71,7 +90,7 @@ async def cash_dashboard(
             <div style="background: #e3f2fd; padding: 15px; border-radius: 8px;">
                 <h3>💰 Готівка в касі (Теорія)</h3>
                 <div style="font-size: 2em; font-weight: bold; color: #0d47a1;">{stats['theoretical_cash']:.2f} грн</div>
-                <small>Початок ({stats['start_cash']}) + Продажі ({stats['total_sales_cash']}) + Внесення ({stats['service_in']}) - Вилучення ({stats['service_out']})</small>
+                <small>Початок ({stats['start_cash']:.2f}) + Виручка ({stats['total_sales_cash']:.2f}) + Внесення ({stats['service_in']:.2f}) - Вилучення ({stats['service_out']:.2f})</small>
             </div>
             <div style="background: #f3e5f5; padding: 15px; border-radius: 8px;">
                 <h3>💳 Термінал (Картка)</h3>
@@ -82,7 +101,7 @@ async def cash_dashboard(
         <table style="width: 100%; margin-bottom: 20px;">
             <tr><td><b>Початок зміни:</b></td><td>{stats['start_time'].strftime('%d.%m.%Y %H:%M')}</td></tr>
             <tr><td><b>Касир:</b></td><td>{html.escape(active_shift.employee.full_name)}</td></tr>
-            <tr><td><b>Продажі (Всього):</b></td><td>{stats['total_sales']:.2f} грн</td></tr>
+            <tr><td><b>Загальні продажі:</b></td><td>{stats['total_sales']:.2f} грн</td></tr>
         </table>
         """
         
@@ -122,7 +141,31 @@ async def cash_dashboard(
             </div>
             {x_report_html}
         </div>
+        {debtors_html}
         {actions_html}
+        """
+    else:
+        # Зміна закрита. Форма відкриття.
+        employees = (await session.execute(select(Employee).where(Employee.is_on_shift == True))).scalars().all()
+        emp_options = "".join([f'<option value="{e.id}">{html.escape(e.full_name)}</option>' for e in employees])
+        
+        body = f"""
+        {history_btn}
+        <div class="card">
+            <h2>🔴 Каса закрита</h2>
+            <p>Щоб почати роботу, відкрийте нову касову зміну.</p>
+            <form action="/admin/cash/open" method="post" style="max_width: 400px;">
+                <label>Касир (хто відкриває):</label>
+                <select name="employee_id" required>
+                    {emp_options or '<option value="" disabled>Немає працівників на зміні</option>'}
+                </select>
+                
+                <label>Залишок в касі (грн):</label>
+                <input type="number" step="0.01" name="start_cash" value="0.00" required>
+                
+                <button type="submit" class="button">🟢 Відкрити зміну</button>
+            </form>
+        </div>
         """
 
     active_classes = {key: "" for key in ["orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active", "design_active"]}
@@ -136,12 +179,152 @@ async def cash_dashboard(
         **active_classes
     ))
 
+# --- СТОРІНКА ПРИЙОМУ ГРОШЕЙ (Handover) ---
+@router.get("/admin/cash/handover/{employee_id}", response_class=HTMLResponse)
+async def handover_form(
+    employee_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    username: str = Depends(check_credentials)
+):
+    settings = await session.get(Settings, 1) or Settings()
+    employee = await session.get(Employee, employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Співробітника не знайдено")
+
+    # Отримуємо відкриту зміну касира (для прив'язки)
+    # Вважаємо, що "active_shift" - це будь-яка відкрита зміна
+    active_shift_res = await session.execute(select(CashShift).where(CashShift.is_closed == False))
+    active_shift = active_shift_res.scalars().first()
+    
+    if not active_shift:
+        return HTMLResponse("<h1>Спочатку відкрийте касову зміну!</h1><a href='/admin/cash'>Назад</a>")
+
+    # Знаходимо замовлення, за які співробітник винен гроші
+    # Це замовлення, де:
+    # 1. payment_method = 'cash'
+    # 2. is_cash_turned_in = False
+    # 3. Співробітник є виконавцем (кур'єром або офіціантом)
+    
+    orders_res = await session.execute(
+        select(Order).where(
+            Order.payment_method == 'cash',
+            Order.is_cash_turned_in == False,
+            or_(
+                Order.courier_id == employee.id,
+                Order.accepted_by_waiter_id == employee.id,
+                Order.completed_by_courier_id == employee.id
+            )
+        ).order_by(Order.id.desc())
+    )
+    orders = orders_res.scalars().all()
+    
+    rows = ""
+    total_sum = 0
+    for o in orders:
+        total_sum += o.total_price
+        rows += f"""
+        <tr>
+            <td><input type="checkbox" name="order_ids" value="{o.id}" checked onchange="recalcTotal()"></td>
+            <td>#{o.id}</td>
+            <td>{o.created_at.strftime('%d.%m %H:%M')}</td>
+            <td>{html.escape(o.address or 'В закладі')}</td>
+            <td class="amount">{o.total_price:.2f}</td>
+        </tr>
+        """
+    
+    # УВАГА: Це звичайний рядок, не f-string, тому фігурні дужки тут ОК
+    js_script = """
+    <script>
+        function recalcTotal() {
+            let total = 0;
+            document.querySelectorAll('input[name="order_ids"]:checked').forEach(cb => {
+                const row = cb.closest('tr');
+                const amount = parseFloat(row.querySelector('.amount').innerText);
+                total += amount;
+            });
+            document.getElementById('selected-total').innerText = total.toFixed(2);
+        }
+    </script>
+    """
+
+    # УВАГА: Це f-string, тому дужки в JS нижче подвоєні {{ }}
+    body = f"""
+    {js_script}
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2>💸 Прийом виручки від: {html.escape(employee.full_name)}</h2>
+            <a href="/admin/cash" class="button secondary">⬅️ Назад</a>
+        </div>
+        
+        <p>Поточний баланс співробітника: <b>{employee.cash_balance:.2f} грн</b></p>
+        
+        <form action="/admin/cash/process_handover" method="post">
+            <input type="hidden" name="employee_id" value="{employee.id}">
+            <input type="hidden" name="shift_id" value="{active_shift.id}">
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead><tr><th><input type="checkbox" checked onclick="toggleAll(this)"></th><th>ID</th><th>Дата</th><th>Адреса</th><th>Сума (грн)</th></tr></thead>
+                    <tbody>
+                        {rows or "<tr><td colspan='5'>Немає неоплачених замовлень</td></tr>"}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: right;">
+                <h3>До отримання: <span id="selected-total">{total_sum:.2f}</span> грн</h3>
+                <button type="submit" class="button">💰 Підтвердити отримання грошей</button>
+            </div>
+        </form>
+    </div>
+    <script>
+        function toggleAll(source) {{
+            checkboxes = document.getElementsByName('order_ids');
+            for(var i=0, n=checkboxes.length;i<n;i++) {{
+                checkboxes[i].checked = source.checked;
+            }}
+            recalcTotal();
+        }}
+    </script>
+    """
+    
+    active_classes = {key: "" for key in ["orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active", "design_active"]}
+    active_classes["reports_active"] = "active"
+    
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(
+        title="Прийом виручки", 
+        body=body, 
+        site_title=settings.site_title or "Назва", 
+        main_active="",
+        **active_classes
+    ))
+
+@router.post("/admin/cash/process_handover")
+async def process_handover_route(
+    request: Request,
+    employee_id: int = Form(...),
+    shift_id: int = Form(...),
+    session: AsyncSession = Depends(get_db_session),
+    username: str = Depends(check_credentials)
+):
+    form_data = await request.form()
+    order_ids = [int(x) for x in form_data.getlist("order_ids")]
+    
+    if not order_ids:
+        raise HTTPException(status_code=400, detail="Не вибрано жодного замовлення")
+    
+    try:
+        await process_handover(session, shift_id, employee_id, order_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    return RedirectResponse("/admin/cash", status_code=303)
+
 # --- ІСТОРІЯ ЗМІН ---
 @router.get("/admin/cash/history", response_class=HTMLResponse)
 async def cash_history(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     settings = await session.get(Settings, 1) or Settings()
     
-    # Останні 20 закритих змін
     shifts_res = await session.execute(
         select(CashShift)
         .where(CashShift.is_closed == True)
@@ -153,8 +336,6 @@ async def cash_history(session: AsyncSession = Depends(get_db_session), username
     
     rows = ""
     for s in shifts:
-        # Розрахунок теоретичного залишку
-        # Всі поля в моделі CashShift тепер Numeric (Decimal), тому операції безпечні
         theoretical = s.start_cash + s.total_sales_cash + s.service_in - s.service_out
         diff = s.end_cash_actual - theoretical
         
@@ -188,7 +369,7 @@ async def cash_history(session: AsyncSession = Depends(get_db_session), username
                         <th>ID</th>
                         <th>Час (Відкр/Закр)</th>
                         <th>Касир</th>
-                        <th>Виручка</th>
+                        <th>Виручка (Гот+Карт)</th>
                         <th>Готівка (факт)</th>
                         <th>Різниця</th>
                         <th>Дії</th>
@@ -215,10 +396,10 @@ async def print_z_report(shift_id: int, session: AsyncSession = Depends(get_db_s
     
     settings = await session.get(Settings, 1) or Settings()
     
-    # Розрахунок теоретичного залишку
     theoretical = shift.start_cash + shift.total_sales_cash + shift.service_in - shift.service_out
     diff = shift.end_cash_actual - theoretical
     
+    # В цьому f-string дужки для CSS мають бути подвоєні: {{ }}
     html_report = f"""
     <!DOCTYPE html>
     <html>

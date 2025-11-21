@@ -18,12 +18,11 @@ from templates import ADMIN_HTML_TEMPLATE, ADMIN_ORDER_MANAGE_BODY
 from dependencies import get_db_session, check_credentials
 from notification_manager import notify_all_parties_on_status_change
 from utils import parse_products_str
+# --- КАСА: Імпорт сервісів ---
+from cash_service import link_order_to_shift, register_employee_debt
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# get_bot_instances ВИДАЛЕНО (боти беруться з request.app.state)
-# parse_products_str ВИДАЛЕНО (імпортовано з utils)
 
 @router.get("/admin/order/manage/{order_id}", response_class=HTMLResponse)
 async def get_manage_order_page(
@@ -41,35 +40,29 @@ async def get_manage_order_page(
             joinedload(Order.status),
             joinedload(Order.courier),
             joinedload(Order.history).joinedload(OrderStatusHistory.status),
-            joinedload(Order.table) # Завантажуємо столик
+            joinedload(Order.table) 
         ]
     )
     if not order:
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
 
     # --- Формування списку товарів з іконками цехів ---
-    # Використовуємо функцію з utils
     products_map = parse_products_str(order.products)
     products_html_list = []
     
     if products_map:
         product_names = list(products_map.keys())
-        # Отримуємо інформацію про цех для кожного товару
         products_res = await session.execute(select(Product))
         all_products = products_res.scalars().all()
-        
-        # Створюємо мапу, де ключ - це назва товару БЕЗ пробілів по краях
         db_products = {p.name.strip(): p for p in all_products}
 
         for name, qty in products_map.items():
             icon = "❓"
-            # Шукаємо по "чистій" назві
             if prod := db_products.get(name.strip()):
                 if prod.preparation_area == 'kitchen':
-                    icon = "🍳" # Кухня
+                    icon = "🍳" 
                 elif prod.preparation_area == 'bar':
-                    icon = "🍹" # Бар
-            
+                    icon = "🍹" 
             products_html_list.append(f"<li>{icon} {html.escape(name)} x {qty}</li>")
     
     products_html = "<ul>" + "".join(products_html_list) + "</ul>" if products_html_list else "<i>Товарів немає</i>"
@@ -101,12 +94,20 @@ async def get_manage_order_page(
         history_html += f"<li><b>{entry.status.name}</b> (Ким: {html.escape(entry.actor_info)}) - {timestamp}</li>"
     history_html += "</ul>"
     
-    # --- Payment Method Selection ---
+    # --- Payment Method & Cash Status ---
     sel_cash = "selected" if order.payment_method == 'cash' else ""
     sel_card = "selected" if order.payment_method == 'card' else ""
+    
     payment_method_text = "Готівка" if order.payment_method == 'cash' else "Картка"
+    
+    # Додаємо інформацію про здачу виручки
+    if order.payment_method == 'cash' and order.status.is_completed_status:
+        if order.is_cash_turned_in:
+            payment_method_text += " <span style='color:green; font-weight:bold;'>(В касі ✅)</span>"
+        else:
+            payment_method_text += " <span style='color:red; font-weight:bold;'>(Не здано ❌)</span>"
 
-    # --- ВИПРАВЛЕННЯ ОТОБРАЖЕННЯ АДРЕСИ ---
+    # --- Адреса ---
     if order.order_type == 'in_house':
         table_name = order.table.name if order.table else '?'
         display_address = f"📍 В закладі (Стіл: {html.escape(table_name)})"
@@ -114,23 +115,21 @@ async def get_manage_order_page(
         display_address = html.escape(order.address or "Адреса не вказана")
     else:
         display_address = "🏃 Самовивіз"
-    # --------------------------------------
+    # --------------
 
     body = ADMIN_ORDER_MANAGE_BODY.format(
         order_id=order.id,
         customer_name=html.escape(order.customer_name or "Не вказано"),
         phone_number=html.escape(order.phone_number or "Не вказано"),
-        
-        address=display_address, # <-- Використовуємо нову змінну
-        
+        address=display_address,
         total_price=order.total_price,
         products_html=products_html,
         status_options=status_options,
         courier_options=courier_options,
         history_html=history_html or "<p>Історія статусів порожня.</p>",
-        sel_cash=sel_cash, # NEW
-        sel_card=sel_card, # NEW
-        payment_method_text=payment_method_text # NEW
+        sel_cash=sel_cash, 
+        sel_card=sel_card, 
+        payment_method_text=payment_method_text 
     )
 
     active_classes = {key: "" for key in ["clients_active", "main_active", "products_active", "categories_active", "statuses_active", "settings_active", "employees_active", "reports_active", "menu_active", "tables_active", "design_active"]}
@@ -145,10 +144,10 @@ async def get_manage_order_page(
 
 @router.post("/admin/order/manage/{order_id}/set_status")
 async def web_set_order_status(
-    request: Request, # Додано Request для доступу до ботів
+    request: Request, 
     order_id: int,
     status_id: int = Form(...),
-    payment_method: str = Form("cash"), # Додано зчитування методу оплати
+    payment_method: str = Form("cash"), 
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
@@ -157,33 +156,51 @@ async def web_set_order_status(
     if not order:
         raise HTTPException(status_code=404, detail="Замовлення не знайдено")
     
-    # Оновлюємо метод оплати
     order.payment_method = payment_method
 
-    # --- БЛОКУВАННЯ ЗМІН ЗАВЕРШЕНИХ ЗАМОВЛЕНЬ ---
+    # Перевірка: якщо замовлення вже закрите
     if order.status.is_completed_status or order.status.is_cancelled_status:
-        raise HTTPException(status_code=400, detail="Замовлення вже закрите (виконане або скасоване). Зміна статусу заборонена.")
+        raise HTTPException(status_code=400, detail="Замовлення вже закрите. Зміна статусу заборонена.")
 
     if order.status_id == status_id:
-        # Тільки зберегли метод оплати
         await session.commit()
         return RedirectResponse(url=f"/admin/order/manage/{order_id}", status_code=303)
 
+    new_status = await session.get(OrderStatus, status_id)
     old_status_name = order.status.name if order.status else "Невідомий"
+    
     order.status_id = status_id
     actor_info = "Адміністратор веб-панелі"
     
     history_entry = OrderStatusHistory(order_id=order.id, status_id=status_id, actor_info=actor_info)
     session.add(history_entry)
     
+    # --- ЛОГІКА КАСИ ПРИ ЗАКРИТТІ ЧЕРЕЗ АДМІНКУ ---
+    if new_status.is_completed_status:
+        # 1. Прив'язуємо до зміни (адміна/касира або будь-якої відкритої)
+        await link_order_to_shift(session, order, None) 
+        
+        # 2. Якщо це готівка, вирішуємо, де гроші
+        if order.payment_method == 'cash':
+            # Якщо є кур'єр, то гроші у нього (борг)
+            if order.courier_id:
+                await register_employee_debt(session, order, order.courier_id)
+            # Якщо це офіціант (в закладі), то гроші у нього
+            elif order.accepted_by_waiter_id:
+                await register_employee_debt(session, order, order.accepted_by_waiter_id)
+            else:
+                # Якщо нікого немає (Самовивіз або адмін сам продав)
+                # Вважаємо, що гроші відразу потрапили в касу
+                order.is_cash_turned_in = True
+    # ----------------------------------------------
+
     await session.commit()
 
-    # Отримуємо ботів зі стану програми
+    # Сповіщення
     admin_bot = request.app.state.admin_bot
     client_bot = request.app.state.client_bot
 
     if admin_bot:
-        # Викликаємо notify без створення нових сесій ботів
         await notify_all_parties_on_status_change(
             order=order,
             old_status_name=old_status_name,
@@ -198,7 +215,7 @@ async def web_set_order_status(
 
 @router.post("/admin/order/manage/{order_id}/assign_courier")
 async def web_assign_courier(
-    request: Request, # Додано Request
+    request: Request,
     order_id: int,
     courier_id: int = Form(...),
     session: AsyncSession = Depends(get_db_session),
