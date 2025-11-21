@@ -133,6 +133,46 @@ async def get_in_house_menu(access_token: str, request: Request, session: AsyncS
         social_links_html=social_links_html
     ))
 
+# --- НОВИЙ ЕНДПОІНТ ДЛЯ АВТООНОВЛЕННЯ (POLLING) ---
+@router.get("/api/menu/table/{table_id}/updates", response_class=JSONResponse)
+async def get_table_updates(table_id: int, session: AsyncSession = Depends(get_db_session)):
+    """Повертає актуальний статус замовлень для оновлення фронтенду."""
+    
+    # Статуси, які вважаються завершеними (замовлення зникає з активних або фіксується)
+    final_statuses_res = await session.execute(
+        select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True))
+    )
+    final_status_ids = final_statuses_res.scalars().all()
+
+    # Отримуємо активні замовлення
+    active_orders_res = await session.execute(
+        select(Order)
+        .where(Order.table_id == table_id, Order.status_id.not_in(final_status_ids))
+        .options(joinedload(Order.status))
+        .order_by(Order.id.desc())
+    )
+    active_orders = active_orders_res.scalars().all()
+
+    history_list = []
+    grand_total = 0
+
+    for o in active_orders:
+        grand_total += o.total_price
+        status_name = o.status.name if o.status else "Обробяється"
+        history_list.append({
+            "id": o.id,
+            "products": o.products,
+            "total_price": o.total_price,
+            "status": status_name,
+            "time": o.created_at.strftime('%H:%M')
+        })
+
+    return {
+        "history_data": history_list,
+        "grand_total": grand_total
+    }
+# ----------------------------------------------------
+
 @router.post("/api/menu/table/{table_id}/call_waiter", response_class=JSONResponse)
 async def call_waiter(
     table_id: int, 

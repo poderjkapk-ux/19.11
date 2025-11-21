@@ -1211,6 +1211,7 @@ ADMIN_CLIENT_DETAIL_BODY = """
     }}
 </script>
 """
+# ... (продовження templates.py) ...
 
 IN_HOUSE_MENU_HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -1461,6 +1462,28 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         #loader {{ display: flex; justify-content: center; align-items: center; height: 80vh; }}
         .spinner {{ border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }}
         
+        /* --- Payment Modal Styles (ADDED & FIXED) --- */
+        .modal-overlay {{
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.7); z-index: 3000;
+            display: none; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.3s ease;
+        }}
+        .modal-overlay.active {{ display: flex; opacity: 1; }}
+        .modal {{
+            background-color: var(--card-bg); backdrop-filter: blur(15px);
+            padding: 30px; border-radius: 12px; width: 90%; max-width: 400px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            transform: scale(0.95); transition: transform 0.3s ease;
+            text-align: center;
+        }}
+        .modal-overlay.active .modal {{ transform: scale(1); }}
+        .modal-header {{ display: flex; justify-content: center; align-items: center; margin-bottom: 20px; position: relative; }}
+        .modal-header h3 {{ margin: 0; color: var(--primary-color); font-size: 1.3em; }}
+        .close-button {{ position: absolute; right: 0; top: -5px; background: none; border: none; font-size: 2em; color: #888; cursor: pointer; line-height: 1; }}
+        .close-button:hover {{ color: var(--primary-color); }}
+        
         /* --- NEW Footer Styles --- */
         footer {{
             background-color: var(--footer-bg-color);
@@ -1632,6 +1655,26 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
     </aside>
     <div id="toast" class="toast"></div>
     
+    <div id="payment-method-modal" class="modal-overlay">
+        <div class="modal" style="text-align: center; max-width: 400px;">
+            <div class="modal-header" style="justify-content: center;">
+                <h3>💳 Як бажаєте розрахуватись?</h3>
+                <button id="close-payment-modal" class="close-button" style="position: absolute; right: 20px;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 20px; color: #666;">Виклик офіціанта для розрахунку:</p>
+                <div style="display: grid; gap: 15px;">
+                    <button class="action-btn confirm-payment-btn" data-method="cash" style="background-color: #28a745; border-color: #28a745; color: white;">
+                        <i class="fa-solid fa-money-bill-wave"></i> Готівка
+                    </button>
+                    <button class="action-btn confirm-payment-btn" data-method="card" style="background-color: #007bff; border-color: #007bff; color: white;">
+                        <i class="fa-regular fa-credit-card"></i> Картка / Термінал
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <footer>
         <div class="footer-content">
             <div class="footer-section">
@@ -1674,11 +1717,11 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             const menuContainer = document.getElementById('menu');
             const categoryNav = document.getElementById('category-nav');
             const cartSidebar = document.getElementById('cart-sidebar');
-            const historySidebar = document.getElementById('history-sidebar'); // New sidebar
+            const historySidebar = document.getElementById('history-sidebar');
             const cartToggle = document.getElementById('cart-toggle');
-            const historyToggle = document.getElementById('history-toggle'); // New toggle
+            const historyToggle = document.getElementById('history-toggle');
             const closeCartBtn = document.getElementById('close-cart-btn');
-            const closeHistoryBtn = document.getElementById('close-history-btn'); // New close
+            const closeHistoryBtn = document.getElementById('close-history-btn');
             const cartItemsContainer = document.getElementById('cart-items-container');
             const cartTotalPriceEl = document.getElementById('cart-total-price');
             const cartCountEl = document.getElementById('cart-count');
@@ -1690,6 +1733,12 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             const historyListEl = document.getElementById('history-list');
             const cartPendingTotalEl = document.getElementById('cart-pending-total');
             const grandTotalDisplayEl = document.getElementById('grand-total-display');
+            const historyTotalEl = document.getElementById('history-total');
+            
+            // --- Elements for Payment Modal ---
+            const payModal = document.getElementById('payment-method-modal');
+            const closePayModalBtn = document.getElementById('close-payment-modal');
+            const requestBillBtn = document.querySelector('.request-bill-btn');
             
             const showToast = (message) => {{
                 toastEl.textContent = message;
@@ -1700,23 +1749,22 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             }};
             
             // --- Render History ---
-            const renderHistory = () => {{
+            const renderHistory = (orders) => {{
                 historyListEl.innerHTML = '';
-                if (historyData.length === 0) {{
+                if (!orders || orders.length === 0) {{
                     historyListEl.innerHTML = '<p style="text-align:center; color:#888;">Історія замовлень порожня.</p>';
                     return;
                 }}
                 
-                historyData.forEach(order => {{
+                orders.forEach(order => {{
                     const item = document.createElement('div');
                     item.className = 'history-item';
-                    // Format products list properly
                     const productsHtml = order.products.replace(/, /g, '<br>');
                     
                     item.innerHTML = `
                         <div class="history-header">
                             <span>#${{order.id}} • ${{order.time}}</span>
-                            <span>${{order.status}}</span>
+                            <span style="color:var(--primary-color); font-weight:600;">${{order.status}}</span>
                         </div>
                         <div class="history-products">${{productsHtml}}</div>
                         <div class="history-footer">
@@ -1727,6 +1775,35 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                     historyListEl.appendChild(item);
                 }});
             }};
+
+            // --- Автооновлення (Polling) ---
+            const fetchUpdates = async () => {{
+                try {{
+                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/updates`);
+                    if (!response.ok) return;
+                    
+                    const data = await response.json();
+                    renderHistory(data.history_data);
+                    
+                    // Оновлення сум
+                    if(historyTotalEl) historyTotalEl.textContent = data.grand_total;
+                    
+                    // Перерахунок загальної суми з урахуванням кошика
+                    let currentCartTotal = 0;
+                    Object.values(cart).forEach(item => currentCartTotal += item.price * item.quantity);
+                    
+                    if(grandTotalDisplayEl) {{
+                        const finalTotal = data.grand_total + currentCartTotal;
+                        grandTotalDisplayEl.textContent = `${{finalTotal}} грн`;
+                    }}
+
+                }} catch (error) {{
+                    console.error("Update error:", error);
+                }}
+            }};
+            
+            // Запускаємо оновлення кожні 5 секунд
+            setInterval(fetchUpdates, 5000);
 
             const updateCartView = () => {{
                 cartItemsContainer.innerHTML = '';
@@ -1762,10 +1839,11 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                 cartCountEl.textContent = totalCount;
                 cartCountEl.style.display = totalCount > 0 ? 'flex' : 'none';
                 
-                // Update Bill Summary (History Sidebar)
-                cartPendingTotalEl.textContent = `${{totalPrice}} грн`;
-                const finalTotal = initialGrandTotal + totalPrice;
-                grandTotalDisplayEl.textContent = `${{finalTotal}} грн`;
+                // Update Bill Summary
+                if(cartPendingTotalEl) cartPendingTotalEl.textContent = `${{totalPrice}} грн`;
+                
+                // Force update grand total immediately
+                fetchUpdates();
             }};
 
             const renderMenu = (data) => {{
@@ -1871,6 +1949,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             historyToggle.addEventListener('click', () => {{
                 historySidebar.classList.add('open');
                 cartSidebar.classList.remove('open');
+                fetchUpdates(); // Refresh immediately when opening
             }});
             
             closeCartBtn.addEventListener('click', () => cartSidebar.classList.remove('open'));
@@ -1895,13 +1974,41 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                 handleApiButtonClick(e.currentTarget, `/api/menu/table/${{TABLE_ID}}/call_waiter`);
             }});
             
-            document.querySelector('.request-bill-btn').addEventListener('click', (e) => {{
-                const button = e.currentTarget;
-                if (confirm("Бажаєте оплатити карткою? (ОК - Картка, Скасувати - Готівка)")) {{
-                     handleApiButtonClick(button, `/api/menu/table/${{TABLE_ID}}/request_bill?method=card`);
-                }} else {{
-                     handleApiButtonClick(button, `/api/menu/table/${{TABLE_ID}}/request_bill?method=cash`);
-                }}
+            // --- Payment Modal Logic ---
+            if(requestBillBtn) {{
+                requestBillBtn.addEventListener('click', (e) => {{
+                    payModal.classList.add('active');
+                }});
+            }}
+            
+            if(closePayModalBtn) {{
+                closePayModalBtn.addEventListener('click', () => payModal.classList.remove('active'));
+            }}
+            
+            window.addEventListener('click', (e) => {{
+                if (e.target === payModal) payModal.classList.remove('active');
+            }});
+            
+            document.querySelectorAll('.confirm-payment-btn').forEach(btn => {{
+                btn.addEventListener('click', async (e) => {{
+                    const method = e.currentTarget.dataset.method;
+                    const originalBtnContent = e.currentTarget.innerHTML;
+                    
+                    e.currentTarget.disabled = true;
+                    e.currentTarget.innerHTML = '<div class="btn-spinner" style="display:inline-block; border-color:white; border-top-color:transparent;"></div>';
+
+                    try {{
+                        const response = await fetch(`/api/menu/table/${{TABLE_ID}}/request_bill?method=${{method}}`, {{ method: 'POST' }});
+                        const result = await response.json();
+                        payModal.classList.remove('active');
+                        showToast(result.message);
+                    }} catch (error) {{
+                        showToast('Сталася помилка.');
+                    }} finally {{
+                        e.currentTarget.disabled = false;
+                        e.currentTarget.innerHTML = originalBtnContent;
+                    }}
+                }});
             }});
 
             placeOrderBtn.addEventListener('click', async (e) => {{
@@ -1922,17 +2029,21 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                     showToast(result.message);
                     if (response.ok) {{
                         cart = {{}};
-                        setTimeout(() => window.location.reload(), 1500);
+                        updateCartView();
+                        cartSidebar.classList.remove('open');
+                        historySidebar.classList.add('open'); // Show history immediately
+                        fetchUpdates();
                     }}
                 }} catch (error) {{
                     showToast('Помилка при відправці замовлення.');
+                }} finally {{
                     button.disabled = false;
                     button.classList.remove('working');
                 }}
             }});
             
             renderMenu(menuData);
-            renderHistory();
+            renderHistory(historyData); // Initial render
             updateCartView();
         }});
     </script>
